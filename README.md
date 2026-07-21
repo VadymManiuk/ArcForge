@@ -7,7 +7,7 @@ ArcForge is a USDC-native token launch and discovery layer for Arc. This reposit
 - Frontend: functional demo mode with typed mock/indexed data boundaries.
 - Contracts: local source and tests; not audited and not deployed.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
-- Deployment addresses: intentionally unset in `deployment/arc-testnet.example.json`.
+- Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcForge deployment addresses remain unset.
 
 Demo market data, token addresses, transactions, holder metrics, and revenue figures are clearly labeled in the UI. Nothing in this repository is an audit claim or investment advice.
 
@@ -43,7 +43,7 @@ The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/
 
 ### Deploy to Arc Testnet
 
-Do not deploy until the official Arc Testnet USDC contract is independently verified. Copy `.env.example` to `.env`, populate `ARC_USDC_ADDRESS`, `FEE_RECIPIENT`, and `DEPLOYER_PRIVATE_KEY`, then:
+The deployment script pins and validates Circle's official Arc Testnet USDC contract, chain ID, token symbol/decimals, contract bytecode, and deployer gas balance before sending transactions. Copy `.env.example` to `.env`, populate `FEE_RECIPIENT` and `DEPLOYER_PRIVATE_KEY`, then:
 
 ```bash
 pnpm contracts:test

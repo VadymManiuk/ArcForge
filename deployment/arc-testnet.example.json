@@ -5,11 +5,11 @@
     "feeVault": null,
     "creatorRegistry": null,
     "factory": null,
-    "usdc": null
+    "usdc": "0x3600000000000000000000000000000000000000"
   },
   "deployer": null,
   "feeRecipient": null,
   "deployedAt": null,
   "explorerBaseUrl": "https://testnet.arcscan.app",
-  "status": "NOT_DEPLOYED"
+  "status": "CONFIGURED_NOT_DEPLOYED"
 }

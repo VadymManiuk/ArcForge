@@ -10,4 +10,5 @@ export const arcTestnet = defineChain({
 });
 
 export const EXPLORER_URL = arcTestnet.blockExplorers.default.url;
+export const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000" as const;
 export const IS_DEMO_MODE = !process.env.NEXT_PUBLIC_FACTORY_ADDRESS;

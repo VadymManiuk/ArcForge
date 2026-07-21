@@ -1,3 +1,4 @@
+require("dotenv").config({ quiet: true });
 require("@nomicfoundation/hardhat-toolbox");
 
 /** @type import('hardhat/config').HardhatUserConfig */

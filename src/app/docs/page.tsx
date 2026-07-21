@@ -1,0 +1,15 @@
+import type { Metadata } from "next";
+import { PageIntro, Panel, WarningBox } from "@/components/ui";
+export const metadata:Metadata={title:"Documentation"};
+const sections=[
+  ["What is ArcForge?","A USDC-native token launch and discovery layer for Arc. It combines fixed-supply launches, a transparent bonding curve, charts, a screener, creator reputation, risk labels, and visible protocol fees."],
+  ["Launching a token","Define identity and metadata, choose a creator allocation up to 20%, review the 25 USDC launch fee, approve USDC, and submit the factory transaction. The factory deploys the token and curve atomically."],
+  ["How the USDC curve works","The MVP uses a virtual-USDC-reserve constant-product curve. Net USDC moves into the reserve as token inventory moves out. Quotes are deterministic from reserves; min-output parameters protect users from slippage."],
+  ["Fees","Launches cost 25 USDC. Buys and sells charge 1%. A 0.25% migration fee is planned but is not implemented in the MVP. Creator verification is disabled."],
+  ["Risk labels","Scores summarize inspectable signals such as fixed supply, known templates, allocation, holder concentration, socials, and creator history. They never guarantee safety."],
+  ["Security notes","The token has no owner mint, blacklist, pause, hidden tax, or honeypot hook. Trading and fee withdrawals use reentrancy guards and SafeERC20. Contracts still require an independent audit before mainnet."],
+  ["Indexing architecture","The frontend currently reads a typed mock indexer boundary. A production indexer can replace it with normalized viem logs for TokenLaunched, TokenBought, TokenSold, FeeCollected, CurveGraduated, and CreatorRegistered."],
+  ["Arc Testnet deployment","Chain ID 5042002 and rpc.testnet.arc.network are configured. Contract and USDC addresses are intentionally unset; deployment refuses to run without an explicit USDC address and fee recipient."],
+  ["Mainnet roadmap","Confirm official Arc mainnet chain values, deploy and verify contracts, add event indexing, implement graduation migration, obtain an independent audit, complete load testing, and rehearse incident response before enabling mainnet."],
+];
+export default function DocsPage(){return <><PageIntro eyebrow="Product documentation" title="How ArcForge works" body="A concise guide to the protocol, product boundaries, and the difference between implemented onchain code and demo presentation data."/><div className="container-shell grid gap-4 pb-20 lg:grid-cols-2">{sections.map(([title,body],i)=><Panel key={title} className="p-6"><span className="font-mono text-[10px] text-cyan">{String(i+1).padStart(2,"0")}</span><h2 className="mt-4 text-lg font-semibold text-white">{title}</h2><p className="mt-3 text-sm leading-6 text-slate-400">{body}</p></Panel>)}<div className="lg:col-span-2"><WarningBox>Demo boundary: market metrics, chart points, trades, fee events, token/creator addresses, holder concentration, and transaction hashes are simulated. The Solidity contracts are local source code until an explicit deployment is performed.</WarningBox></div></div></>}

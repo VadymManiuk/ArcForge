@@ -1,0 +1,18 @@
+packages:
+  - "."
+
+allowBuilds:
+  bufferutil: true
+  keccak: true
+  secp256k1: true
+  sharp: true
+  unrs-resolver: true
+  utf-8-validate: true
+
+onlyBuiltDependencies:
+  - bufferutil
+  - keccak
+  - secp256k1
+  - sharp
+  - unrs-resolver
+  - utf-8-validate

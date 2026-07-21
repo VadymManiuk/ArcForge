@@ -1,0 +1,87 @@
+# ArcForge
+
+ArcForge is a USDC-native token launch and discovery layer for Arc. This repository contains a Next.js product interface and a local, tested Solidity protocol implementation for fixed-supply launches and virtual-reserve bonding curves.
+
+## Current status
+
+- Frontend: functional demo mode with typed mock/indexed data boundaries.
+- Contracts: local source and tests; not audited and not deployed.
+- Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
+- Deployment addresses: intentionally unset in `deployment/arc-testnet.example.json`.
+
+Demo market data, token addresses, transactions, holder metrics, and revenue figures are clearly labeled in the UI. Nothing in this repository is an audit claim or investment advice.
+
+## Local development
+
+Requirements: Node.js 20+ and pnpm.
+
+```bash
+pnpm install
+pnpm contracts:compile
+pnpm contracts:test
+pnpm dev
+```
+
+Validation:
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm build
+```
+
+## Contracts
+
+- `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
+- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection.
+- `ArcForgeFactory`: validates launches, collects a fixed launch fee, deploys token and curve, records creators.
+- `ArcForgeFeeVault`: pulls and records real ERC-20 fees by source; withdraws only to the visible recipient.
+- `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
+- `MockUSDC`: unrestricted minting for local tests only.
+
+The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Migration remains a documented placeholder and is not implemented.
+
+### Deploy to Arc Testnet
+
+Do not deploy until the official Arc Testnet USDC contract is independently verified. Copy `.env.example` to `.env`, populate `ARC_USDC_ADDRESS`, `FEE_RECIPIENT`, and `DEPLOYER_PRIVATE_KEY`, then:
+
+```bash
+pnpm contracts:test
+pnpm deploy:arc-testnet
+```
+
+The deployment script refuses placeholders and writes a gitignored local manifest. Contract verification and an independent audit are still required before any mainnet use.
+
+## VPS deployment
+
+On Ubuntu, install Node.js 20, nginx, Certbot, pnpm, and PM2. Clone the repository, then:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm contracts:compile
+pnpm contracts:test
+pnpm build
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup
+```
+
+Copy `deploy/nginx.arcforge.conf` to `/etc/nginx/sites-available/arcforge`, symlink it into `sites-enabled`, validate with `nginx -t`, reload nginx, then request TLS:
+
+```bash
+certbot --nginx -d arcforge.xyz -d www.arcforge.xyz
+```
+
+Run package and OS upgrades deliberately rather than unattended on a production host; validate the build after upgrades and retain a rollback artifact.
+
+## Production work still required
+
+1. Confirm official Arc mainnet and USDC addresses.
+2. Independent smart-contract audit and formal deployment review.
+3. Contract source verification on Arcscan.
+4. Durable event indexer and PostgreSQL persistence.
+5. ERC-20 approval flows and live transaction state in the frontend.
+6. Graduation/migration design, implementation, and tests.
+7. Monitoring, rate limiting, backups, and incident response.
+
+Not financial advice. Token launches are risky.

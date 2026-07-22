@@ -13,12 +13,13 @@ const nav = [["Tokens", "/tokens"], ["Trending", "/trending"], ["Launch", "/laun
 
 function WalletButton() {
   const { address, isConnected, chainId } = useAccount();
-  const { connectors, connect, isPending } = useConnect();
+  const { connectors, connect, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
+  const connector = connectors.find((item) => item.name === "Rabby") ?? connectors[0];
   if (isConnected && chainId !== arcTestnet.id) return <Button variant="secondary" onClick={() => switchChain({ chainId: arcTestnet.id })}>Switch to Arc</Button>;
   if (isConnected) return <Button variant="secondary" onClick={() => disconnect()}><span className="size-2 rounded-full bg-emerald-400" />{shortAddress(address ?? "")}</Button>;
-  return <Button onClick={() => connectors[0] && connect({ connector: connectors[0] })} disabled={isPending}><Wallet className="size-4" />{isPending ? "Connecting" : "Connect"}</Button>;
+  return <div className="flex items-center gap-2"><Button title={error?.message} onClick={() => connector && connect({ connector })} disabled={isPending || !connector}><Wallet className="size-4" />{isPending ? "Connecting" : `Connect ${connector?.name ?? "wallet"}`}</Button>{error && <span className="hidden max-w-44 text-[10px] leading-4 text-rose-300 xl:block">{error.message.split("\n")[0]}</span>}</div>;
 }
 
 export function Header() {

@@ -2,11 +2,12 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { Check, ChevronRight, ExternalLink, Rocket } from "lucide-react";
-import { decodeEventLog, formatUnits, type Address, type Hash } from "viem";
+import { decodeEventLog, formatUnits, publicActions, type Address, type Hash } from "viem";
 import {
   useAccount,
   usePublicClient,
   useSwitchChain,
+  useWalletClient,
   useWriteContract,
 } from "wagmi";
 import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
@@ -54,10 +55,32 @@ const VIRTUAL_USDC_RESERVE = 10_000n * 10n ** 6n;
 const GRADUATION_THRESHOLD = 50_000n * 10n ** 6n;
 
 function transactionError(error: unknown) {
+  const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
+  if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(fallback)) {
+    return "Arc RPC is temporarily unavailable. No transaction was sent and no USDC was charged. Please retry.";
+  }
   if (typeof error === "object" && error && "shortMessage" in error) {
     return String(error.shortMessage);
   }
-  return error instanceof Error ? error.message : "The wallet transaction failed.";
+  return fallback;
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const retryable = /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|\b429\b/i.test(message);
+      if (!retryable || attempt === attempts) throw error;
+      await wait(attempt * 750);
+    }
+  }
+  throw new Error("Arc RPC request failed after retries.");
 }
 
 export function LaunchForm() {
@@ -69,6 +92,7 @@ export function LaunchForm() {
   const [result, setResult] = useState<LaunchResult | null>(null);
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
@@ -94,7 +118,7 @@ export function LaunchForm() {
       setError("Connect your wallet in the header before launching a token.");
       return;
     }
-    if (!publicClient) {
+    if (!publicClient && !walletClient) {
       setError("Arc Testnet RPC is unavailable. Try again in a moment.");
       return;
     }
@@ -104,26 +128,30 @@ export function LaunchForm() {
     try {
       if (chainId !== arcTestnet.id) {
         await switchChainAsync({ chainId: arcTestnet.id });
+        throw new Error("Arc Testnet is now selected. Click Launch on Arc Testnet again.");
       }
 
-      const balance = await publicClient.readContract({
+      const transactionClient = walletClient?.extend(publicActions) ?? publicClient;
+      if (!transactionClient) throw new Error("No Arc Testnet client is available.");
+
+      const balance = await withRpcRetry(() => transactionClient.readContract({
         address: ARC_TESTNET_CONTRACTS.usdc,
         abi: erc20Abi,
         functionName: "balanceOf",
         args: [address],
-      });
+      }));
       if (balance < LAUNCH_FEE) {
         throw new Error(
           `You have ${formatUnits(balance, 6)} USDC, but the launch fee is 25 USDC. Add testnet USDC and retry.`,
         );
       }
 
-      const allowance = await publicClient.readContract({
+      const allowance = await withRpcRetry(() => transactionClient.readContract({
         address: ARC_TESTNET_CONTRACTS.usdc,
         abi: erc20Abi,
         functionName: "allowance",
         args: [address, ARC_TESTNET_CONTRACTS.factory],
-      });
+      }));
       if (allowance < LAUNCH_FEE) {
         setStatus("approving");
         const approvalHash = await writeContractAsync({
@@ -132,9 +160,9 @@ export function LaunchForm() {
           functionName: "approve",
           args: [ARC_TESTNET_CONTRACTS.factory, LAUNCH_FEE],
         });
-        const approvalReceipt = await publicClient.waitForTransactionReceipt({
+        const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({
           hash: approvalHash,
-        });
+        }));
         if (approvalReceipt.status !== "success") {
           throw new Error("USDC approval reverted onchain.");
         }
@@ -155,7 +183,7 @@ export function LaunchForm() {
           graduationThreshold: GRADUATION_THRESHOLD,
         }],
       });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: launchHash });
+      const receipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: launchHash }));
       if (receipt.status !== "success") {
         throw new Error("Token launch reverted onchain.");
       }

@@ -6,7 +6,16 @@ import { injected } from "@wagmi/core";
 import { useState, type ReactNode } from "react";
 import { arcTestnet } from "@/lib/chains";
 
-const config = createConfig({ chains: [arcTestnet], connectors: [injected()], transports: { [arcTestnet.id]: http() }, ssr: true });
+const config = createConfig({
+  chains: [arcTestnet],
+  connectors: [
+    injected({ target: "rabby", shimDisconnect: true }),
+    injected({ target: "metaMask", shimDisconnect: true }),
+    injected({ shimDisconnect: true }),
+  ],
+  transports: { [arcTestnet.id]: http() },
+  ssr: true,
+});
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());

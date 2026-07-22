@@ -8,6 +8,7 @@ import {
   publicActions,
   type Address,
   type Hash,
+  type PublicClient,
 } from "viem";
 import {
   useAccount,
@@ -88,6 +89,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const [transactionHash, setTransactionHash] = useState<Hash | null>(null);
   const [balances, setBalances] = useState<WalletBalances | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState(false);
   const submissionLockRef = useRef(false);
   const balanceRequestRef = useRef(0);
   const { address, isConnected, chainId } = useAccount();
@@ -108,28 +110,43 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     if (!address || chainId !== arcTestnet.id) {
       setBalances(null);
       setBalanceLoading(false);
+      setBalanceError(false);
       return;
     }
-    const client = walletClient?.extend(publicActions) ?? publicClient;
-    if (!client) return;
+    const account = address;
+    const walletReadClient = walletClient?.chain.id === arcTestnet.id
+      ? walletClient.extend(publicActions) as unknown as PublicClient
+      : null;
+    const clients = [walletReadClient, publicClient].filter((client): client is PublicClient => Boolean(client));
+    if (clients.length === 0) return;
     setBalanceLoading(true);
+    setBalanceError(false);
     try {
-      const usdc = await withRpcRetry(() => client.readContract({
-        address: ARC_TESTNET_CONTRACTS.usdc,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      }));
+      async function readBalance(contractAddress: Address) {
+        let lastError: unknown;
+        for (const client of clients) {
+          try {
+            return await withRpcRetry(() => client.readContract({
+              address: contractAddress,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [account],
+            }), 2);
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        throw lastError ?? new Error("No Arc Testnet balance client is available.");
+      }
+      const usdc = await readBalance(ARC_TESTNET_CONTRACTS.usdc);
       await wait(180);
-      const tokenBalance = await withRpcRetry(() => client.readContract({
-        address: token.address as Address,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      }));
+      const tokenBalance = await readBalance(token.address as Address);
       if (balanceRequestRef.current === requestId) setBalances({ usdc, token: tokenBalance });
     } catch {
-      if (balanceRequestRef.current === requestId) setBalances(null);
+      if (balanceRequestRef.current === requestId) {
+        setBalances(null);
+        setBalanceError(true);
+      }
     } finally {
       if (balanceRequestRef.current === requestId) setBalanceLoading(false);
     }
@@ -270,13 +287,13 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       : balanceLoading
         ? "Reading balance…"
         : activeBalance === undefined
-          ? "Balance unavailable"
+          ? balanceError ? "Balance unavailable · Retry" : "Balance unavailable"
           : `Balance ${displayUnits(activeBalance, inputDecimals)} ${inputSymbol}`;
 
   return <div className="panel p-4">
     <div className="mb-3 flex items-center justify-between"><Badge tone="good">Live onchain</Badge><span className="font-mono text-[9px] text-slate-600">Arc Testnet</span></div>
     <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
-    <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0">You pay</label><div className="flex items-center gap-3"><span className="max-w-[170px] truncate text-[10px] text-slate-500" title={balanceLabel}>{balanceLabel}</span><button disabled={isPending} onClick={() => setSlippage(slippage === 1 ? 0.5 : 1)} className="flex items-center gap-1 text-[10px] text-slate-500 disabled:opacity-50"><Settings2 className="size-3" />{slippage}%</button></div></div>
+    <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0">You pay</label><div className="flex items-center gap-3"><button type="button" disabled={!balanceError || balanceLoading} onClick={() => void refreshBalances()} className={`max-w-[170px] truncate text-[10px] disabled:cursor-default ${balanceError ? "text-cyan" : "text-slate-500"}`} title={balanceLabel}>{balanceLabel}</button><button disabled={isPending} onClick={() => setSlippage(slippage === 1 ? 0.5 : 1)} className="flex items-center gap-1 text-[10px] text-slate-500 disabled:opacity-50"><Settings2 className="size-3" />{slippage}%</button></div></div>
     <div className="mt-2 flex items-center rounded-xl border border-line bg-[#080c13] px-3 focus-within:border-cyan/50"><input inputMode="decimal" value={amount} disabled={isPending} onChange={(event) => setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none disabled:opacity-50" /><Badge tone="neutral">{inputSymbol}</Badge></div>
     <div className="mt-2 grid grid-cols-5 gap-1">{percentageOptions.map((percent) => <button key={percent} type="button" disabled={isPending || activeBalance === undefined || activeBalance === 0n} onClick={() => selectBalancePercent(percent)} className="h-8 rounded-lg border border-line bg-black/15 font-mono text-[10px] text-slate-400 transition hover:border-cyan/35 hover:text-cyan disabled:cursor-not-allowed disabled:opacity-35">{percent}%</button>)}</div>
     <div className="relative my-3 flex justify-center"><span className="grid size-7 place-items-center rounded-full border border-line bg-panel text-slate-500"><ArrowDown className="size-3" /></span></div>

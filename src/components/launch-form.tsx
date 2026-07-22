@@ -57,7 +57,7 @@ const GRADUATION_THRESHOLD = 50_000n * 10n ** 6n;
 function transactionError(error: unknown) {
   const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
   if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(fallback)) {
-    return "Arc RPC is temporarily unavailable. No transaction was sent and no USDC was charged. Please retry.";
+    return "Arc RPC is temporarily unavailable. Check Rabby activity or Arcscan before retrying because an approval or launch may already have been submitted.";
   }
   if (typeof error === "object" && error && "shortMessage" in error) {
     return String(error.shortMessage);
@@ -190,6 +190,7 @@ export function LaunchForm() {
 
       let launched: LaunchResult | null = null;
       for (const log of receipt.logs) {
+        if (log.address.toLowerCase() !== ARC_TESTNET_CONTRACTS.factory.toLowerCase()) continue;
         try {
           const event = decodeEventLog({
             abi: factoryAbi,

@@ -15,6 +15,7 @@ const curveAbi = [
   { type: "function", name: "graduationThreshold", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "tokenReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "isGraduated", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
 ] as const;
 const LOG_BLOCK_RANGE = 9_999n;
 const CHART_TRADE_LIMIT = 240;
@@ -33,6 +34,7 @@ export type MarketSnapshot = {
   raisedUsdc: number;
   targetUsdc: number;
   progress: number;
+  graduated: boolean;
   tokensSold: number;
   tokenReserve: number;
   chart: ChartPoint[];
@@ -133,6 +135,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   const graduationRaw = await readAtBlock(() => publicClient.readContract({ address: launch.curve, abi: curveAbi, functionName: "graduationThreshold", blockNumber: indexedBlock }));
   const tokenReserveRaw = await readAtBlock(() => publicClient.readContract({ address: launch.curve, abi: curveAbi, functionName: "tokenReserve", blockNumber: indexedBlock }));
   const usdcReserveRaw = await readAtBlock(() => publicClient.readContract({ address: launch.curve, abi: curveAbi, functionName: "usdcReserve", blockNumber: indexedBlock }));
+  const graduated = await readAtBlock(() => publicClient.readContract({ address: launch.curve, abi: curveAbi, functionName: "isGraduated", blockNumber: indexedBlock }));
   if (tokenReserveRaw <= 0n || initialReserveRaw <= 0n || totalSupplyRaw <= 0n) throw new Error("Curve reserves are invalid at the indexed block.");
 
   const events: IndexedTrade[] = [];
@@ -212,6 +215,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
     raisedUsdc,
     targetUsdc,
     progress: targetUsdc > 0 ? raisedUsdc / targetUsdc * 100 : 0,
+    graduated,
     tokensSold: initialReserve - tokenReserve,
     tokenReserve,
     chart,

@@ -76,7 +76,7 @@ function applySnapshot(token: TokenData, snapshot: MarketSnapshot, holderSnapsho
     trades: snapshot.trades.length,
     holders: holderSnapshot?.holders ?? 0,
     curveProgress: snapshot.progress,
-    status: snapshot.progress >= 100 ? "Graduated" : snapshot.progress >= 75 ? "Graduating soon" : "Live on curve",
+    status: snapshot.graduated ? "Graduated" : snapshot.progress >= 75 ? "Graduating soon" : "Live on curve",
     chartData: snapshot.chart,
     recentTrades: snapshot.trades,
     creatorProfile: { ...token.creatorProfile, totalVolume: snapshot.volume },
@@ -90,10 +90,15 @@ async function loadServerSnapshot<T>(path: string): Promise<{ snapshot: T; stale
   return { snapshot: payload.snapshot, stale: Boolean(payload.stale) };
 }
 
-async function loadFactoryTokens(includeMarketData: boolean, forceRefresh: boolean) {
+async function loadFactoryTokens(
+  includeMarketData: boolean,
+  forceRefresh: boolean,
+  onIndexLoaded?: (tokens: TokenData[], stale: boolean) => void,
+) {
   const indexPath = `/api/onchain/tokens${forceRefresh ? "?refresh=1" : ""}`;
   const indexResult = await loadServerSnapshot<TokenIndexSnapshot>(indexPath);
   if (!includeMarketData) return { tokens: indexResult.snapshot.tokens, marketDataError: null, stale: indexResult.stale };
+  onIndexLoaded?.(indexResult.snapshot.tokens, indexResult.stale);
 
   const tokens: TokenData[] = [];
   let marketDataError: unknown;
@@ -128,7 +133,11 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
     setLoading(true);
     setError("");
     try {
-      const result = await loadFactoryTokens(includeMarketData, forceRefresh);
+      const result = await loadFactoryTokens(includeMarketData, forceRefresh, (indexedTokens, stale) => {
+        setTokens(indexedTokens);
+        setIsPartial(false);
+        setIsCached(stale);
+      });
       setTokens(result.tokens);
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);

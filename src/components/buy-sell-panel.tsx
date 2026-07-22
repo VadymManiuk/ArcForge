@@ -102,7 +102,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const inputSymbol = side === "Buy" ? "USDC" : token.ticker;
   const outputSymbol = side === "Buy" ? token.ticker : "USDC";
   const isPending = status !== "idle";
-  const tradingDisabled = token.status === "Graduated";
+  const buyDisabled = side === "Buy" && token.status === "Graduated";
   const activeBalance = side === "Buy" ? balances?.usdc : balances?.token;
 
   const refreshBalances = useCallback(async () => {
@@ -191,7 +191,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     setTransactionHash(null);
     setStatus("quoting");
     try {
-      if (tradingDisabled) throw new Error("Trading is closed on this deployed curve after graduation. Migration is not enabled.");
+      if (buyDisabled) throw new Error("New buys are closed after graduation. Existing holders can still sell against the remaining curve liquidity.");
       const input = parseUnits(amount, inputDecimals);
       if (input <= 0n) throw new Error("Enter an amount greater than zero.");
       const client = await getClient();
@@ -281,8 +281,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         ? `Approving ${inputSymbol}…`
         : status === "trading"
           ? `${side} pending…`
-          : tradingDisabled
-            ? "Trading closed at graduation"
+          : buyDisabled
+            ? "Buying closed at graduation"
             : quote
               ? `${side} ${token.ticker}`
               : "Get onchain quote";
@@ -307,9 +307,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     <label className="label">Expected output</label>
     <div className="flex h-14 items-center justify-between rounded-xl border border-line bg-[#080c13] px-3"><span className="text-xl font-semibold text-white">{quote ? displayUnits(quote.output, outputDecimals) : "—"}</span><Badge tone="cyan">{outputSymbol}</Badge></div>
     <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.fee, 6)} USDC` : "1.00%"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div></dl>
-    <Button className="w-full" disabled={isPending || tradingDisabled} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
+    <Button className="w-full" disabled={isPending || buyDisabled} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
     {notice && <p className={`mt-3 rounded-lg p-2 text-[11px] leading-4 ${transactionHash ? "bg-emerald-400/[.07] text-emerald-300" : "bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
-    <div className="mt-4"><WarningBox>{tradingDisabled ? "This deployed curve closes trading at graduation; migration is not enabled." : `Quotes and trades use the deployed ${token.ticker} bonding curve. Rabby may request an exact-token approval before the trade transaction.`}</WarningBox></div>
+    <div className="mt-4"><WarningBox>{token.status === "Graduated" ? "New buys are permanently closed after graduation. Holders may still sell while the curve has USDC liquidity; migration is not enabled." : `Quotes and trades use the deployed ${token.ticker} bonding curve. Rabby may request an exact-token approval before the trade transaction.`}</WarningBox></div>
   </div>;
 }
 

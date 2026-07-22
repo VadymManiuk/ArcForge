@@ -9,6 +9,13 @@ allowBuilds:
   unrs-resolver: true
   utf-8-validate: true
 
+minimumReleaseAgeExclude:
+  - postcss@8.5.10
+  - ws@8.21.0
+  - uuid@11.1.1
+  - axios@1.18.0
+  - sharp@0.35.0
+
 onlyBuiltDependencies:
   - bufferutil
   - keccak
@@ -16,3 +23,11 @@ onlyBuiltDependencies:
   - sharp
   - unrs-resolver
   - utf-8-validate
+
+overrides:
+  axios@>=1.0.0 <1.18.0: ^1.18.0
+  postcss@<8.5.10: ^8.5.10
+  sharp@<0.35.0: ^0.35.0
+  use-sync-external-store@<1.6.0: ^1.6.0
+  uuid@<11.1.1: ^11.1.1
+  ws@>=8.0.0 <8.21.0: ^8.21.0

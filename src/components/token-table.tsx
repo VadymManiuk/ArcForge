@@ -52,21 +52,41 @@ export function TokenTable({
             className={filter === item ? "h-8 shrink-0 bg-white/[.07] px-3 text-white" : "h-8 shrink-0 px-3 text-slate-500"}
           >{item}</Button>)}
         </div>
-        {!compact && <div className="flex gap-2">
-          <label className="relative">
+        {!compact && <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 md:flex">
+          <label className="relative min-w-0">
             <Search className="absolute left-3 top-2.5 size-4 text-slate-600"/>
             <input className="input h-9 w-full pl-9 md:w-64" placeholder="Token, ticker, address…" value={query} onChange={(event) => setQuery(event.target.value)}/>
           </label>
-          <label className="relative">
+          <label className="relative min-w-0">
             <ArrowUpDown className="absolute left-3 top-2.5 size-4 text-slate-600"/>
-            <select className="input h-9 appearance-none pl-9 pr-8" value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
+            <select className="input h-9 appearance-none pl-9 pr-7" value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
               <option value="volume24h">Volume</option><option value="marketCap">Market cap</option><option value="raisedUSDC">Raised</option><option value="buyers">Buyers</option><option value="ageMinutes">Age</option><option value="riskScore">Risk score</option><option value="curveProgress">Curve</option>
             </select>
           </label>
         </div>}
       </div>
     </div>
-    <div className="overflow-x-auto">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-3 md:hidden">
+      {shown.map((token) => {
+        const awaitingLive = token.source === "onchain" && (onchainState === "loading" || onchainState === "unavailable");
+        const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
+        return <Link key={token.address} href={`/tokens/${token.address}`} className="min-w-0 rounded-xl border border-line bg-black/15 p-4 transition active:border-cyan/40">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><Badge tone={token.source === "onchain" && onchainState === "live" ? "good" : "neutral"}>{token.source === "onchain" ? onchainState === "loading" ? "Reading…" : onchainState === "cached" ? "Cached" : onchainState === "unavailable" ? "Unavailable" : "Onchain" : "Demo"}</Badge></div></div></div>
+            <RiskBadge score={token.riskScore}/>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+            <MobileMetric label="Price" value={awaitingLive ? "—" : money(token.price)}/>
+            <MobileMetric label="Volume" value={awaitingLive ? "—" : money(token.volume24h, true)}/>
+            <MobileMetric label="Holders" value={token.source === "onchain" && token.holders === 0 ? "—" : number(token.holders)}/>
+          </div>
+          <div className="mt-4"><div className="mb-2 flex items-center justify-between font-mono text-[9px] text-slate-500"><span>Curve {awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></div>
+          <div className="mt-4 flex items-center justify-between"><Badge tone={token.status === "Flagged" ? "bad" : token.status === "Graduated" ? "good" : token.status === "Graduating soon" ? "warn" : "cyan"}>{token.status}</Badge><span className="text-xs font-semibold text-cyan">Open market →</span></div>
+        </Link>;
+      })}
+      {shown.length === 0 && <div className="p-8 text-center text-sm text-slate-500">No tokens match this view.</div>}
+    </div>
+    <div className="hidden overflow-x-auto md:block">
       <table className="w-full min-w-[1380px] text-left text-xs [&_td]:px-3 [&_th]:px-3">
         <thead><tr className="border-b border-line bg-white/[.015] font-mono text-[9px] uppercase tracking-[.14em] text-slate-600"><th className="px-4 py-3">Token</th><th>Age</th><th>Price / change</th><th>Market cap</th><th>Raised</th><th>Volume</th><th>Buy / Sell</th><th>Trades</th><th>Holders</th><th className="w-32">Curve</th><th>Risk</th><th>Status</th><th></th></tr></thead>
         <tbody>{shown.map((token) => {
@@ -92,4 +112,8 @@ export function TokenTable({
       {shown.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No tokens match this view.</div>}
     </div>
   </div>;
+}
+
+function MobileMetric({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0"><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">{label}</p><p className="mt-1 truncate text-slate-200">{value}</p></div>;
 }

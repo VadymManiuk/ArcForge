@@ -7,6 +7,7 @@ ArcOrigin is currently a testnet product. The contracts, indexer, and web app ha
 - Launch tokens have fixed supply and no owner, mint, pause, blacklist, or transfer-tax hooks.
 - The factory caps creator allocation at 20% and trading fees at 10% per side.
 - Curve trades use `ReentrancyGuard`, `SafeERC20`, exact-amount approvals in the UI, and caller-provided minimum output.
+- Curve reserve updates round in favor of the pool, preventing dust trades from extracting a whole token base unit through integer truncation.
 - Factory launches, trades, holders, and fees shown as onchain data are validated against the configured factory and Arc Testnet events.
 - API routes validate token addresses, cache RPC work, throttle refreshes, and return stale confirmed snapshots rather than simulated onchain values.
 - The production app applies CSP, clickjacking, MIME-sniffing, referrer, permissions, and HSTS headers.

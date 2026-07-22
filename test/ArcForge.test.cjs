@@ -129,7 +129,68 @@ describe("ArcForgeBondingCurve", function () {
     expect(await token.balanceOf(trader.address)).to.equal(0);
   });
 
-  it("refuses a buy that would round the token reserve to zero", async function () {
+  it("does not pay a whole USDC base unit for a dust token sale", async function () {
+    const platform = await deployPlatform();
+    const { trader, usdc } = platform;
+    const { token, curve } = await launch(platform);
+    const amount = 100n * USDC;
+    const [tokensOut] = await curve.quoteBuy(amount);
+    await usdc.connect(trader).approve(await curve.getAddress(), amount);
+    await curve.connect(trader).buy(amount, tokensOut);
+
+    const [dustOutput, dustFee] = await curve.quoteSell(1n);
+    expect(dustOutput).to.equal(0);
+    expect(dustFee).to.equal(0);
+    await token.connect(trader).approve(await curve.getAddress(), 1n);
+    await expect(curve.connect(trader).sell(1n, 0)).to.be.revertedWithCustomError(curve, "InsufficientLiquidity");
+  });
+
+  it("preserves reserve solvency and a non-decreasing invariant across randomized trades", async function () {
+    const platform = await deployPlatform();
+    const { trader, usdc } = platform;
+    const { token, curve } = await launch(platform);
+    const curveAddress = await curve.getAddress();
+    await usdc.connect(trader).approve(curveAddress, ethers.MaxUint256);
+    await token.connect(trader).approve(curveAddress, ethers.MaxUint256);
+
+    let seed = 0xA11CEn;
+    const nextRandom = () => {
+      seed ^= seed << 13n;
+      seed ^= seed >> 7n;
+      seed ^= seed << 17n;
+      return seed & ((1n << 64n) - 1n);
+    };
+
+    for (let iteration = 0; iteration < 32; iteration += 1) {
+      const tokenReserveBefore = await curve.tokenReserve();
+      const usdcReserveBefore = await curve.usdcReserve();
+      const virtualReserve = await curve.virtualUsdcReserve();
+      const invariantBefore = (virtualReserve + usdcReserveBefore) * tokenReserveBefore;
+      const traderTokens = await token.balanceOf(trader.address);
+      const shouldBuy = traderTokens === 0n || nextRandom() % 3n !== 0n;
+
+      if (shouldBuy) {
+        const amount = (nextRandom() % 200n + 1n) * USDC;
+        const [quote] = await curve.quoteBuy(amount);
+        expect(quote).to.be.greaterThan(0);
+        await curve.connect(trader).buy(amount, quote);
+      } else {
+        const amount = traderTokens * (nextRandom() % 80n + 1n) / 100n;
+        const [quote] = await curve.quoteSell(amount);
+        if (quote > 0n) await curve.connect(trader).sell(amount, quote);
+      }
+
+      const tokenReserveAfter = await curve.tokenReserve();
+      const usdcReserveAfter = await curve.usdcReserve();
+      const invariantAfter = (virtualReserve + usdcReserveAfter) * tokenReserveAfter;
+      expect(await token.balanceOf(curveAddress)).to.equal(tokenReserveAfter);
+      expect(await usdc.balanceOf(curveAddress)).to.equal(usdcReserveAfter);
+      expect(tokenReserveAfter).to.be.greaterThan(0);
+      expect(invariantAfter).to.be.at.least(invariantBefore);
+    }
+  });
+
+  it("keeps a nonzero token reserve under an extreme buy input", async function () {
     const platform = await deployPlatform();
     const { trader, usdc } = platform;
     const { curve } = await launch(platform);
@@ -137,8 +198,9 @@ describe("ArcForgeBondingCurve", function () {
     await usdc.mint(trader.address, excessiveInput);
     await usdc.connect(trader).approve(await curve.getAddress(), excessiveInput);
     const [quote] = await curve.quoteBuy(excessiveInput);
-    expect(quote).to.equal(0);
-    await expect(curve.connect(trader).buy(excessiveInput, 0)).to.be.revertedWithCustomError(curve, "SlippageExceeded");
+    expect(quote).to.be.greaterThan(0);
+    await expect(curve.connect(trader).buy(excessiveInput, quote)).to.emit(curve, "TokenBought");
+    expect(await curve.tokenReserve()).to.equal(1n);
   });
 
   it("graduates at the configured net-USDC threshold", async function () {

@@ -72,7 +72,10 @@ contract ArcForgeBondingCurve is ReentrancyGuard {
         fee = usdcAmount * buyFeeBps / BPS;
         uint256 netAmount = usdcAmount - fee;
         uint256 currentUsdc = virtualUsdcReserve + usdcReserve;
-        uint256 newTokenReserve = Math.mulDiv(currentUsdc, tokenReserve, currentUsdc + netAmount);
+        // Round the remaining reserve up so integer truncation can never give a buyer extra inventory.
+        uint256 newTokenReserve = Math.mulDiv(
+            currentUsdc, tokenReserve, currentUsdc + netAmount, Math.Rounding.Ceil
+        );
         if (newTokenReserve == 0) return (0, fee);
         tokensOut = tokenReserve - newTokenReserve;
     }
@@ -80,7 +83,11 @@ contract ArcForgeBondingCurve is ReentrancyGuard {
     function quoteSell(uint256 tokenAmount) public view returns (uint256 usdcOut, uint256 fee) {
         if (tokenAmount == 0) return (0, 0);
         uint256 currentUsdc = virtualUsdcReserve + usdcReserve;
-        uint256 newUsdc = Math.mulDiv(currentUsdc, tokenReserve, tokenReserve + tokenAmount);
+        // Round the remaining reserve up. Flooring here would let a dust token sale receive
+        // one whole USDC base unit even when its economic value is below that unit.
+        uint256 newUsdc = Math.mulDiv(
+            currentUsdc, tokenReserve, tokenReserve + tokenAmount, Math.Rounding.Ceil
+        );
         uint256 grossOut = currentUsdc - newUsdc;
         if (grossOut > usdcReserve) return (0, 0);
         fee = grossOut * sellFeeBps / BPS;
@@ -139,7 +146,7 @@ contract ArcForgeBondingCurve is ReentrancyGuard {
     }
 
     function tokensSold() public view returns (uint256) {
-        return initialTokenReserve - tokenReserve;
+        return tokenReserve < initialTokenReserve ? initialTokenReserve - tokenReserve : 0;
     }
 
     function isGraduated() external view returns (bool) {

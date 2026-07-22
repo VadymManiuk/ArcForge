@@ -4,12 +4,25 @@
   "contracts": {
     "feeVault": "0x7bfcdA8108Db53B3cCAe02B29C6e5B3905950fB4",
     "creatorRegistry": "0x07287313ee649efcF22EAEE4361cd6c512219B61",
-    "factory": "0xA4DbA45B199287d3163199A86B4618968d8f8424",
+    "factory": "0xc5FB127934782D5A147d5EE67Be741EC233036D2",
     "usdc": "0x3600000000000000000000000000000000000000"
   },
   "deployer": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
   "feeRecipient": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
-  "deployedAt": "2026-07-22T08:55:10.885Z",
+  "deployedAt": "2026-07-22T16:41:53.626Z",
   "explorerBaseUrl": "https://testnet.arcscan.app",
-  "status": "DEPLOYED"
+  "status": "V2_ACTIVE",
+  "legacyFactories": [
+    "0xA4DbA45B199287d3163199A86B4618968d8f8424"
+  ],
+  "migration": {
+    "type": "FACTORY_ONLY",
+    "preservesFeeVault": true,
+    "preservesCreatorRegistry": true,
+    "previousFactory": "0xA4DbA45B199287d3163199A86B4618968d8f8424",
+    "factoryDeploymentTx": "0x4e334fec6ed9673707cb6dbdd1bdbbe9be4fb7527d4b194f520e539c48099261",
+    "factoryDeploymentBlock": 53112263,
+    "registryActivationTx": "0xb923a2f54e0a05e0458972032917a0e0bfb0e3b04a4e1a33c6efd683ce8bca49",
+    "activatedAt": "2026-07-22T16:51:12.618Z"
+  }
 }

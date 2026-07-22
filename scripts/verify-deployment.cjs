@@ -37,14 +37,30 @@ async function withRpcRetry(label, operation, attempts = 5) {
 async function main() {
   const manifestPath = path.join(__dirname, "..", "deployment", "arc-testnet.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const legacyFactories = manifest.legacyFactories ?? [];
+  if (!Array.isArray(legacyFactories)) {
+    throw new Error("legacyFactories must be an array when present.");
+  }
+
   const network = await withRpcRetry("network lookup", () => hre.ethers.provider.getNetwork());
   assertEqual("chain ID", network.chainId, EXPECTED_CHAIN_ID);
 
   for (const [name, address] of Object.entries(manifest.contracts)) {
+    if (!hre.ethers.isAddress(address)) throw new Error(`${name} is not a valid address.`);
     const code = await withRpcRetry(`${name} bytecode lookup`, () =>
       hre.ethers.provider.getCode(address),
     );
     if (code === "0x") throw new Error(`${name} has no bytecode at ${address}.`);
+  }
+
+  for (const [index, address] of legacyFactories.entries()) {
+    if (!hre.ethers.isAddress(address)) {
+      throw new Error(`legacy factory ${index + 1} is not a valid address.`);
+    }
+    const code = await withRpcRetry(`legacy factory ${index + 1} bytecode lookup`, () =>
+      hre.ethers.provider.getCode(address),
+    );
+    if (code === "0x") throw new Error(`legacy factory has no bytecode at ${address}.`);
   }
 
   const vault = await hre.ethers.getContractAt("ArcForgeFeeVault", manifest.contracts.feeVault);
@@ -79,11 +95,37 @@ async function main() {
   assertEqual("buy fee", values[9], EXPECTED_TRADING_FEE_BPS);
   assertEqual("sell fee", values[10], EXPECTED_TRADING_FEE_BPS);
 
+  for (const [index, address] of legacyFactories.entries()) {
+    const legacyFactory = await hre.ethers.getContractAt("ArcForgeFactory", address);
+    const prefix = `legacy factory ${index + 1}`;
+    const legacyValues = [];
+    for (const [label, read] of [
+      ["owner", () => legacyFactory.owner()],
+      ["USDC", () => legacyFactory.usdc()],
+      ["fee vault", () => legacyFactory.feeVault()],
+      ["creator registry", () => legacyFactory.creatorRegistry()],
+      ["launch fee", () => legacyFactory.launchFee()],
+      ["buy fee", () => legacyFactory.buyFeeBps()],
+      ["sell fee", () => legacyFactory.sellFeeBps()],
+    ]) {
+      legacyValues.push(await withRpcRetry(`${prefix} ${label}`, read));
+    }
+
+    assertEqual(`${prefix} owner`, legacyValues[0], manifest.deployer);
+    assertEqual(`${prefix} USDC`, legacyValues[1], manifest.contracts.usdc);
+    assertEqual(`${prefix} fee vault`, legacyValues[2], manifest.contracts.feeVault);
+    assertEqual(`${prefix} creator registry`, legacyValues[3], manifest.contracts.creatorRegistry);
+    assertEqual(`${prefix} launch fee`, legacyValues[4], EXPECTED_LAUNCH_FEE);
+    assertEqual(`${prefix} buy fee`, legacyValues[5], EXPECTED_TRADING_FEE_BPS);
+    assertEqual(`${prefix} sell fee`, legacyValues[6], EXPECTED_TRADING_FEE_BPS);
+  }
+
   const blockNumber = await withRpcRetry("block number lookup", () =>
     hre.ethers.provider.getBlockNumber(),
   );
   console.log(`Verified ArcForge deployment at block ${blockNumber}.`);
   console.log(`Factory: ${manifest.contracts.factory}`);
+  for (const address of legacyFactories) console.log(`Legacy Factory: ${address}`);
   console.log(`FeeVault: ${manifest.contracts.feeVault}`);
   console.log(`CreatorRegistry: ${manifest.contracts.creatorRegistry}`);
 }

@@ -32,7 +32,7 @@ pnpm build
 
 ## Contracts
 
-The deployed Arc Testnet v1 contracts retain their original `ArcForge*` Solidity names and addresses. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
+The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity names. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
 
 - `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
 - `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. New deployments close buys at graduation while keeping sells available so holders retain an exit path.
@@ -41,7 +41,7 @@ The deployed Arc Testnet v1 contracts retain their original `ArcForge*` Solidity
 - `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
 - `MockUSDC`: unrestricted minting for local tests only.
 
-The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Migration remains a documented placeholder and is not implemented. The currently deployed Arc Testnet v1 curves close both buys and sells at graduation; the updated source keeps post-graduation sells open and requires a new reviewed deployment before it can affect testnet behavior.
+The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Liquidity migration remains a documented placeholder and is not implemented. The active Arc Testnet V2 Factory uses pool-favoring reserve rounding and keeps post-graduation sells open. Tokens created by the legacy Factory retain their original curve behavior and remain indexed and tradeable through their deployed curves.
 
 ### Deploy to Arc Testnet
 
@@ -54,6 +54,13 @@ pnpm verify:arc-testnet
 ```
 
 The deployment script refuses placeholders and writes a gitignored local manifest. The public testnet manifest contains no secrets. Arcscan source verification and an independent audit are still required before any mainnet use.
+
+Factory-only upgrades use separate deployment and activation commands so the new Factory can be inspected and the dual-factory indexer deployed before `CreatorRegistry` is changed:
+
+```bash
+pnpm deploy:arc-testnet:v2
+pnpm deploy:arc-testnet:v2:activate
+```
 
 ## VPS deployment
 

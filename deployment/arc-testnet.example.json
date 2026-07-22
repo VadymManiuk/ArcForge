@@ -11,5 +11,6 @@
   "feeRecipient": null,
   "deployedAt": null,
   "explorerBaseUrl": "https://testnet.arcscan.app",
-  "status": "CONFIGURED_NOT_DEPLOYED"
+  "status": "CONFIGURED_NOT_DEPLOYED",
+  "legacyFactories": []
 }

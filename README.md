@@ -22,7 +22,7 @@ pnpm contracts:test
 pnpm dev
 ```
 
-Copy `.env.example` to `.env`. `PINATA_JWT` enables wallet-authorized image and token metadata uploads to public IPFS; keep it server-only. `IPFS_GATEWAY_URL` is optional and defaults to Pinata's public gateway.
+Copy `.env.example` to `.env`. `PINATA_JWT` enables wallet-authorized image and token metadata uploads to public IPFS; keep it server-only. A Pinata V3 key should include `org:files:write`; legacy keys scoped to `pinFileToIPFS` are supported through a compatibility fallback. `IPFS_GATEWAY_URL` is optional and defaults to Pinata's public gateway.
 
 Validation:
 

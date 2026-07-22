@@ -159,8 +159,15 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   }, [amount, side, slippage]);
 
   useEffect(() => {
-    void refreshBalances();
+    const timeout = window.setTimeout(() => void refreshBalances(), 1_500);
+    return () => window.clearTimeout(timeout);
   }, [refreshBalances]);
+
+  useEffect(() => {
+    if (!balanceError) return;
+    const timeout = window.setTimeout(() => void refreshBalances(), 12_000);
+    return () => window.clearTimeout(timeout);
+  }, [balanceError, refreshBalances]);
 
   function selectBalancePercent(percent: (typeof percentageOptions)[number]) {
     if (activeBalance === undefined) return;

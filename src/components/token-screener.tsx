@@ -16,11 +16,10 @@ export function TokenScreener() {
   const trades = indexedTokens.reduce((sum, token) => sum + token.trades, 0);
 
   return <div className="container-shell pb-20">
-    <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <StatCard label="Tracked launches" value={String(tokens.length)} detail={`${indexedTokens.length} onchain · ${mockTokens.length} demo`}/>
-      <StatCard label="Factory launches" value={loading && indexedTokens.length === 0 ? "—" : String(indexedTokens.length)} detail={isCached && cachedAt ? `Cached ${new Date(cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Indexed from TokenLaunched"}/>
+    <div className="mb-5 grid gap-3 sm:grid-cols-3">
+      <StatCard label="Factory launches" value={loading && indexedTokens.length === 0 ? "—" : String(indexedTokens.length)} detail={isCached && cachedAt ? `Cached ${new Date(cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Confirmed onchain"}/>
       <StatCard label="Onchain volume" value={indexedTokens.length > 0 && !isPartial && !loading ? money(onchainVolume) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Updating confirmed trades" : `${trades} confirmed trades`}/>
-      <StatCard label="Protocol raised" value={indexedTokens.length > 0 && !isPartial && !loading ? money(raised) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Updating curve reserves" : "Current curve reserves"}/>
+      <StatCard label="Curve reserves" value={indexedTokens.length > 0 && !isPartial && !loading ? money(raised) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Updating reserves" : `${mockTokens.length} labeled demo listings available`}/>
     </div>
     {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{isCached && indexedTokens.length > 0 ? `Showing the last confirmed cached snapshot. ${error}` : error}</WarningBox></div><Button variant="ghost" onClick={() => void refresh()}>Retry live data</Button></div>}
     <TokenTable tokens={tokens} onchainState={liveState}/>

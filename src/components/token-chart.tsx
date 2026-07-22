@@ -112,22 +112,22 @@ export function TokenChart({ data, compact = false }: { data: ChartPoint[]; comp
         height: compact ? 144 : 360,
         layout: {
           background: { type: ColorType.Solid, color: "transparent" },
-          textColor: "#64748b",
-          fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+          textColor: "#667174",
+          fontFamily: "ui-monospace, SFMono-Regular, monospace",
           fontSize: 10,
           attributionLogo: true,
         },
         grid: {
-          vertLines: { color: "rgba(37, 49, 71, 0.35)" },
-          horzLines: { color: "rgba(37, 49, 71, 0.45)" },
+          vertLines: { color: "rgba(37, 43, 45, 0.5)" },
+          horzLines: { color: "rgba(37, 43, 45, 0.6)" },
         },
         crosshair: { mode: CrosshairMode.Normal },
         rightPriceScale: {
-          borderColor: "#253147",
+          borderColor: "#252b2d",
           scaleMargins: { top: 0.08, bottom: 0.24 },
         },
         timeScale: {
-          borderColor: "#253147",
+          borderColor: "#252b2d",
           timeVisible: true,
           secondsVisible: false,
           rightOffset: 4,
@@ -145,7 +145,7 @@ export function TokenChart({ data, compact = false }: { data: ChartPoint[]; comp
         borderVisible: false,
         wickUpColor: "#34d399",
         wickDownColor: "#fb7185",
-        priceLineColor: "#41d9ff",
+        priceLineColor: "#79e7c5",
         priceLineWidth: 1,
         priceFormat: { type: "price", precision: 10, minMove: 0.0000000001 },
       });
@@ -200,6 +200,6 @@ export function TokenChart({ data, compact = false }: { data: ChartPoint[]; comp
       <div className="flex flex-wrap items-center gap-1">{ranges.map((item) => <Button key={item} variant="ghost" className={range === item ? "h-8 bg-white/[.07] px-3 text-white" : "h-8 px-3"} onClick={() => setRange(item)}>{item}</Button>)}</div>
     </div>}
     <div ref={containerRef} className={compact ? "h-36 w-full" : "h-[350px] w-full"} aria-label="Interactive candlestick price chart" />
-    {!compact && <div className="mt-2 flex items-center justify-between text-[9px] text-slate-600"><span>Scroll to move · pinch or wheel to zoom · volume below candles</span><a href="https://www.tradingview.com/" target="_blank" rel="noreferrer" className="transition hover:text-cyan">Charts by TradingView</a></div>}
+    {!compact && <div className="mt-2 text-[9px] text-slate-600">Drag to move · wheel to zoom · volume below candles</div>}
   </div>;
 }

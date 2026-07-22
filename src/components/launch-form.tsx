@@ -18,11 +18,6 @@ import { Button, Progress, WarningBox } from "./ui";
 type FormData = {
   name: string;
   ticker: string;
-  description: string;
-  image: string;
-  website: string;
-  x: string;
-  telegram: string;
   allocation: string;
   metadata: string;
 };
@@ -33,21 +28,13 @@ type LaunchResult = { token: Address; curve: Address; hash: Hash };
 const defaults: FormData = {
   name: "",
   ticker: "",
-  description: "",
-  image: "",
-  website: "",
-  x: "",
-  telegram: "",
   allocation: "5",
   metadata: "",
 };
 const confirmations = [
-  "Fixed supply",
-  "No hidden mint",
-  "No blacklist",
-  "Transparent fees",
-  "Risk understood",
-  "Not financial advice",
+  "Fixed supply with no hidden mint",
+  "No blacklist or transfer tax",
+  "I understand the fee and launch risk",
 ];
 const LAUNCH_FEE = 25n * 10n ** 6n;
 const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
@@ -104,8 +91,7 @@ export function LaunchForm() {
         ? form.name.trim().length >= 2 &&
           form.name.trim().length <= 64 &&
           /^[A-Za-z0-9]{2,10}$/.test(form.ticker) &&
-          form.description.trim().length >= 12 &&
-          form.description.trim().length <= 500
+          form.metadata.trim().length <= 512
         : step === 2
           ? Number(form.allocation) >= 0 && Number(form.allocation) <= 20
           : checks.length === confirmations.length,
@@ -279,7 +265,7 @@ export function LaunchForm() {
             : "Continue";
 
   return (
-    <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_340px]">
+    <form onSubmit={submit} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="panel p-5 md:p-7">
         <div className="mb-7 flex items-center gap-3">
           {[1, 2, 3].map((item) => (
@@ -299,20 +285,8 @@ export function LaunchForm() {
               <Field label="Token name" required value={form.name} onChange={(value) => update("name", value)} placeholder="Forge Network" maxLength={64} />
               <Field label="Ticker" required value={form.ticker} onChange={(value) => update("ticker", value.toUpperCase())} placeholder="FORGE" maxLength={10} />
             </div>
-            <label>
-              <span className="label">Description *</span>
-              <textarea className="input min-h-28 resize-none py-3" maxLength={500} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Explain the token, creator intent, and community…" />
-            </label>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Image URL" value={form.image} onChange={(value) => update("image", value)} placeholder="https://…" />
-              <Field label="Metadata URI" value={form.metadata} onChange={(value) => update("metadata", value)} placeholder="ipfs://…" maxLength={512} />
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Website" value={form.website} onChange={(value) => update("website", value)} placeholder="https://…" />
-              <Field label="X / Twitter" value={form.x} onChange={(value) => update("x", value)} placeholder="https://x.com/…" />
-              <Field label="Telegram" value={form.telegram} onChange={(value) => update("telegram", value)} placeholder="https://t.me/…" />
-            </div>
-            <p className="text-[11px] leading-5 text-slate-500">The contract stores the metadata URI. Description, image, and social fields are launch-preview data until an indexer or metadata upload service is connected.</p>
+            <Field label="Metadata URI (optional)" value={form.metadata} onChange={(value) => update("metadata", value)} placeholder="ipfs://…" maxLength={512} />
+            <p className="text-[11px] leading-5 text-slate-500">Only the name, ticker, and metadata URI are written into the token contract. You can leave metadata empty.</p>
           </div>
         )}
 
@@ -332,7 +306,7 @@ export function LaunchForm() {
         {step === 3 && (
           <div className="grid gap-5">
             <div><p className="eyebrow">03 · Verify</p><h2 className="mt-2 text-xl font-semibold">Confirm launch conditions</h2></div>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2">
               {confirmations.map((item) => (
                 <label key={item} className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[.018] p-3 text-sm text-slate-300">
                   <input type="checkbox" className="accent-cyan" checked={checks.includes(item)} onChange={() => setChecks((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item])} />
@@ -356,7 +330,7 @@ export function LaunchForm() {
       <aside className="panel h-fit p-5 lg:sticky lg:top-24">
         <p className="eyebrow">Launch preview</p>
         <div className="mt-5 flex items-center gap-3">
-          <div className="grid size-12 place-items-center rounded-xl bg-gradient-to-br from-cyan/25 to-violet/25 font-mono text-xs">{form.ticker.slice(0, 2) || "??"}</div>
+          <div className="grid size-12 place-items-center rounded-xl border border-cyan/20 bg-cyan/[.08] font-mono text-xs text-cyan">{form.ticker.slice(0, 2) || "??"}</div>
           <div><p className="font-semibold text-white">{form.name || "Untitled token"}</p><p className="font-mono text-xs text-slate-500">{form.ticker || "TICKER"}</p></div>
         </div>
         <dl className="mt-6 grid gap-3 text-xs">

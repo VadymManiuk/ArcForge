@@ -5,15 +5,15 @@ import { EXPLORER_URL } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 
 export function DemoBanner() {
-  return <div className="border-b border-cyan/15 bg-cyan/[.045] py-1.5 text-center font-mono text-[10px] uppercase tracking-[.14em] text-cyan">Arc Testnet contracts live · Factory launches, trades, and fees are indexed onchain · Demo listings remain labeled</div>;
+  return <div className="border-b border-line bg-[#0b0e0f] py-1.5 text-center text-[11px] text-slate-400"><span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-400 align-middle"/>Arc Testnet · contracts live · simulated listings are labeled</div>;
 }
 
 export function Button({ className, variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
-  return <button className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40", variant === "primary" && "bg-cyan text-[#031015] hover:bg-[#77e6ff]", variant === "secondary" && "border border-line bg-white/[.04] text-white hover:border-slate-500 hover:bg-white/[.07]", variant === "ghost" && "text-slate-300 hover:bg-white/[.05] hover:text-white", variant === "danger" && "bg-rose-400/15 text-rose-300", className)} {...props} />;
+  return <button className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40", variant === "primary" && "bg-cyan text-[#07110e] hover:bg-[#98efd5]", variant === "secondary" && "border border-line bg-white/[.035] text-white hover:border-slate-500 hover:bg-white/[.06]", variant === "ghost" && "text-slate-400 hover:bg-white/[.045] hover:text-white", variant === "danger" && "bg-rose-400/15 text-rose-300", className)} {...props} />;
 }
 
 export function LinkButton({ href, children, variant = "primary", className }: { href: string; children: ReactNode; variant?: "primary" | "secondary"; className?: string }) {
-  return <Link href={href} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition", variant === "primary" ? "bg-cyan text-[#031015] hover:bg-[#77e6ff]" : "border border-line bg-white/[.03] text-white hover:border-slate-500", className)}>{children}</Link>;
+  return <Link href={href} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition", variant === "primary" ? "bg-cyan text-[#07110e] hover:bg-[#98efd5]" : "border border-line bg-white/[.025] text-white hover:border-slate-500 hover:bg-white/[.05]", className)}>{children}</Link>;
 }
 
 export function Badge({ children, tone = "neutral", className }: { children: ReactNode; tone?: "neutral" | "good" | "warn" | "bad" | "cyan"; className?: string }) {
@@ -21,7 +21,7 @@ export function Badge({ children, tone = "neutral", className }: { children: Rea
 }
 
 export function StatCard({ label, value, detail, className }: { label: string; value: string; detail?: string; className?: string }) {
-  return <div className={cn("panel p-4 md:p-5", className)}><p className="font-mono text-[10px] uppercase tracking-[.16em] text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight text-white">{value}</p>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div>;
+  return <div className={cn("rounded-2xl border border-line bg-panel p-4 md:p-5", className)}><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold tracking-[-.025em] text-white">{value}</p>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div>;
 }
 
 export function SectionHeading({ eyebrow, title, body, action }: { eyebrow?: string; title: string; body?: string; action?: ReactNode }) {
@@ -39,13 +39,13 @@ export function RiskBadge({ score }: { score: number }) {
 }
 
 export function TokenIcon({ label, className }: { label: string; className?: string }) {
-  return <div className={cn("grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-cyan/30 via-violet/20 to-white/5 font-mono text-[11px] font-bold text-white shadow-inner", className)}>{label}</div>;
+  return <div className={cn("grid size-10 shrink-0 place-items-center rounded-xl border border-cyan/20 bg-cyan/[.09] font-mono text-[11px] font-semibold text-cyan", className)}>{label}</div>;
 }
 
-export function Progress({ value }: { value: number }) { return <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-gradient-to-r from-cyan to-violet transition-all" style={{ width: `${Math.min(100, value)}%` }} /></div>; }
+export function Progress({ value }: { value: number }) { return <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, value)}%` }} /></div>; }
 
 export function PageIntro({ eyebrow, title, body, children }: { eyebrow: string; title: string; body: string; children?: ReactNode }) {
-  return <div className="container-shell pb-8 pt-12 md:pb-12 md:pt-16"><div className="max-w-3xl"><p className="eyebrow mb-4">{eyebrow}</p><h1 className="text-4xl font-semibold tracking-[-.035em] text-white md:text-6xl">{title}</h1><p className="mt-5 text-base leading-7 text-slate-400 md:text-lg">{body}</p>{children}</div></div>;
+  return <div className="container-shell pb-8 pt-10 md:pb-10 md:pt-14"><div className="max-w-2xl"><p className="eyebrow mb-3">{eyebrow}</p><h1 className="text-3xl font-semibold tracking-[-.04em] text-white sm:text-4xl md:text-5xl">{title}</h1><p className="mt-4 text-sm leading-6 text-slate-400 md:text-base md:leading-7">{body}</p>{children}</div></div>;
 }
 
 export function EmptyState({ title, body }: { title: string; body: string }) { return <div className="panel p-10 text-center"><p className="font-medium text-white">{title}</p><p className="mt-2 text-sm text-slate-500">{body}</p></div>; }

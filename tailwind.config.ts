@@ -5,18 +5,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#05070b",
-        panel: "#0b1019",
-        line: "#1b2534",
-        cyan: "#41d9ff",
-        violet: "#8a7dff",
+        ink: "#080a0b",
+        panel: "#111516",
+        line: "#252b2d",
+        cyan: "#79e7c5",
+        violet: "#91a4ff",
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["SFMono-Regular", "ui-monospace", "monospace"],
       },
       boxShadow: {
-        glow: "0 0 50px rgba(65,217,255,.10)",
+        glow: "0 18px 60px rgba(0,0,0,.28)",
       },
     },
   },

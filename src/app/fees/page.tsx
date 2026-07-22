@@ -5,5 +5,5 @@ import { PageIntro } from "@/components/ui";
 export const metadata: Metadata = { title: "Fee Dashboard" };
 
 export default function FeesPage() {
-  return <><PageIntro eyebrow="Protocol economics" title="Every fee, made visible" body="Read confirmed launch, buy, sell, and withdrawal events directly from the deployed Arc Testnet FeeVault. No simulated revenue is included."/><LiveFeeDashboard/></>;
+  return <><PageIntro eyebrow="Protocol economics" title="Fees" body="Confirmed launch, buy, sell, and withdrawal events from the Arc Testnet FeeVault. No simulated revenue."/><LiveFeeDashboard/></>;
 }

@@ -4,27 +4,28 @@
 
 :root { color-scheme: dark; }
 * { border-color: theme(colors.line); }
-html { background: #05070b; scroll-behavior: smooth; }
+html { background: #080a0b; scroll-behavior: smooth; }
 body {
   min-height: 100vh;
-  color: #e9f0f8;
+  color: #f1f4f3;
   background:
-    radial-gradient(900px 500px at 12% -10%, rgba(40, 185, 230, .11), transparent 60%),
-    radial-gradient(700px 480px at 90% 5%, rgba(118, 92, 255, .10), transparent 62%),
-    #05070b;
+    radial-gradient(800px 420px at 50% -120px, rgba(121, 231, 197, .08), transparent 68%),
+    #080a0b;
+  font-feature-settings: "ss01", "cv02", "cv03";
+  letter-spacing: -.01em;
 }
-::selection { color: white; background: rgba(65,217,255,.35); }
+::selection { color: #07100d; background: rgba(121,231,197,.8); }
 
 @layer components {
-  .container-shell { @apply mx-auto w-full max-w-[1480px] px-4 md:px-6; }
-  .panel { @apply rounded-2xl border border-line/80 bg-panel/75 shadow-glow backdrop-blur-xl; }
-  .eyebrow { @apply font-mono text-[10px] font-semibold uppercase tracking-[.22em] text-cyan; }
+  .container-shell { @apply mx-auto w-full max-w-[1400px] px-4 md:px-6 lg:px-8; }
+  .panel { @apply rounded-2xl border border-line bg-panel shadow-glow; }
+  .eyebrow { @apply font-mono text-[10px] font-medium uppercase tracking-[.18em] text-cyan; }
   .muted { @apply text-sm text-slate-400; }
-  .input { @apply h-11 w-full rounded-xl border border-line bg-[#080c13] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10; }
+  .input { @apply h-11 w-full rounded-xl border border-line bg-[#0b0e0f] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10; }
   .label { @apply mb-2 block text-xs font-medium text-slate-300; }
-  .grid-line { background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px); background-size: 48px 48px; }
+  .grid-line { background-image: linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px); background-size: 64px 64px; }
 }
 
-.recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #182231; }
+.recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #242a2c; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #1c2a3a; border-radius: 8px; }
+::-webkit-scrollbar-thumb { background: #2a3133; border-radius: 8px; }

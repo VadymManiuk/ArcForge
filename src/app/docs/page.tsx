@@ -1,15 +1,68 @@
 import type { Metadata } from "next";
 import { PageIntro, Panel, WarningBox } from "@/components/ui";
-export const metadata:Metadata={title:"Documentation"};
-const sections=[
-  ["What is ArcOrigin?","A USDC-native token launch and discovery layer for Arc. It combines fixed-supply launches, a transparent bonding curve, charts, a screener, creator reputation, risk labels, and visible protocol fees."],
-  ["Launching a token","Define identity and metadata, choose a creator allocation up to 20%, review the 25 USDC launch fee, approve USDC, and submit the factory transaction. The factory deploys the token and curve atomically."],
-  ["How the USDC curve works","The MVP uses a virtual-USDC-reserve constant-product curve. Net USDC moves into the reserve as token inventory moves out. Quotes are deterministic from reserves; min-output parameters protect users from slippage."],
-  ["Fees","Launches cost 25 USDC. Buys and sells charge 1%. No migration fee is collected because migration is not implemented. Creator verification is disabled."],
-  ["Risk labels","Scores summarize inspectable signals such as fixed supply, known templates, allocation, holder concentration, socials, and creator history. They never guarantee safety."],
-  ["Security notes","The token has no owner mint, blacklist, pause, hidden tax, or honeypot hook. Trading and fee withdrawals use reentrancy guards and SafeERC20. Deployed v1 curves close both buys and sells at graduation; updated source keeps sells open for future deployments. Contracts still require an independent audit before mainnet."],
-  ["Indexing architecture","The testnet frontend discovers Factory TokenLaunched events, hydrates standard token and curve configuration, and reads TokenBought, TokenSold, FeeReceived, and FeeWithdrawn logs through viem. A persistent database indexer is still recommended for mainnet scale, historical aggregation, and RPC independence."],
-  ["Arc Testnet deployment","The factory, fee vault, and creator registry are deployed on chain ID 5042002 and use Circle's Arc Testnet USDC. The launch form submits real approval and factory transactions; addresses are recorded in the public deployment manifest."],
-  ["Mainnet roadmap","Confirm official Arc mainnet chain values, deploy and verify contracts, add event indexing, implement graduation migration, obtain an independent audit, complete load testing, and rehearse incident response before enabling mainnet."],
-];
-export default function DocsPage(){return <><PageIntro eyebrow="Product documentation" title="How ArcOrigin works" body="A concise guide to the protocol, product boundaries, and the difference between implemented onchain code and demo presentation data."/><div className="container-shell grid gap-4 pb-20 lg:grid-cols-2">{sections.map(([title,body],i)=><Panel key={title} className="p-6"><span className="font-mono text-[10px] text-cyan">{String(i+1).padStart(2,"0")}</span><h2 className="mt-4 text-lg font-semibold text-white">{title}</h2><p className="mt-3 text-sm leading-6 text-slate-400">{body}</p></Panel>)}<div className="lg:col-span-2"><WarningBox>Live boundary: Factory launches, the legacy AFG testnet market, trade events, charts, and FeeVault accounting are read from Arc Testnet. Listings marked Demo, broad holder concentration, and unverified creator metadata remain simulated or unavailable.</WarningBox></div></div></>}
+
+export const metadata: Metadata = { title: "Documentation" };
+
+const sections = [
+  {
+    title: "Launch",
+    items: [
+      ["Token", "Fixed supply, no owner mint, blacklist, pause, or transfer tax."],
+      ["Allocation", "The creator allocation is visible and capped at 20%."],
+      ["Cost", "Launching costs 25 USDC on Arc Testnet."],
+    ],
+  },
+  {
+    title: "Trade",
+    items: [
+      ["Curve", "A virtual-USDC-reserve constant-product curve prices each trade."],
+      ["Protection", "Quotes include minimum output so slippage is enforced onchain."],
+      ["Fees", "Buys and sells each charge a visible 1% protocol fee."],
+    ],
+  },
+  {
+    title: "Verify",
+    items: [
+      ["Data", "Launches, trades, charts, and fees are read from Arc Testnet events."],
+      ["Labels", "Demo listings and unavailable signals are explicitly identified."],
+      ["Risk", "Scores organize observable signals; they never guarantee safety."],
+    ],
+  },
+] as const;
+
+export default function DocsPage() {
+  return (
+    <>
+      <PageIntro
+        eyebrow="Product guide"
+        title="How ArcOrigin works"
+        body="The essentials of launching, trading, and verifying a token—without hiding protocol behavior behind marketing language."
+      />
+      <div className="container-shell grid gap-4 pb-20 lg:grid-cols-3">
+        {sections.map((section, sectionIndex) => (
+          <Panel key={section.title} className="p-5 md:p-6">
+            <div className="flex items-center gap-3">
+              <span className="grid size-8 place-items-center rounded-lg bg-cyan/10 font-mono text-[10px] text-cyan">
+                0{sectionIndex + 1}
+              </span>
+              <h2 className="text-lg font-semibold text-white">{section.title}</h2>
+            </div>
+            <div className="mt-6 divide-y divide-line">
+              {section.items.map(([label, body]) => (
+                <div key={label} className="py-4 first:pt-0 last:pb-0">
+                  <p className="text-sm font-medium text-white">{label}</p>
+                  <p className="mt-1.5 text-sm leading-6 text-slate-500">{body}</p>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        ))}
+        <div className="lg:col-span-3">
+          <WarningBox>
+            ArcOrigin is live on testnet, not audited for mainnet, and not financial advice. Legacy v1 curves stop both buys and sells at graduation; the active factory uses the hardened v2 curve.
+          </WarningBox>
+        </div>
+      </div>
+    </>
+  );
+}

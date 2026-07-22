@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { formatUnits, parseAbiItem, type Address, type Hash, type PublicClient } from "viem";
+import { formatUnits, parseAbiItem, type Address, type GetLogsReturnType, type Hash, type PublicClient } from "viem";
 import { usePublicClient } from "wagmi";
 import { TokenChart } from "@/components/token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, StatCard, WarningBox } from "@/components/ui";
@@ -11,6 +11,8 @@ import { money, number } from "@/lib/utils";
 
 const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)");
 const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
+const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
+const EVENT_BLOCK_CHUNK = 10_000n;
 const reserveAbi = [
   { type: "function", name: "tokenReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
@@ -77,19 +79,20 @@ export async function loadOnchainTokenSnapshot(client: PublicClient, token: Toke
     functionName: "usdcReserve",
   }));
   await wait(350);
-  const buyLogs = await readWithRetry(() => client.getLogs({
-    address: curveAddress,
-    event: tokenBoughtEvent,
-    fromBlock,
-    toBlock: "latest",
-  }));
-  await wait(350);
-  const sellLogs = await readWithRetry(() => client.getLogs({
-    address: curveAddress,
-    event: tokenSoldEvent,
-    fromBlock,
-    toBlock: "latest",
-  }));
+  const latestBlock = await readWithRetry(() => client.getBlockNumber());
+  const tradeLogs: GetLogsReturnType<undefined, typeof tradeEvents> = [];
+  for (let chunkStart = fromBlock; chunkStart <= latestBlock; chunkStart += EVENT_BLOCK_CHUNK) {
+    const chunkEnd = chunkStart + EVENT_BLOCK_CHUNK - 1n;
+    const toBlock = chunkEnd < latestBlock ? chunkEnd : latestBlock;
+    const chunk = await readWithRetry(() => client.getLogs({
+      address: curveAddress,
+      events: tradeEvents,
+      fromBlock: chunkStart,
+      toBlock,
+    }));
+    tradeLogs.push(...chunk);
+    if (toBlock < latestBlock) await wait(150);
+  }
 
   const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
   const raisedUsdc = Number(formatUnits(usdcReserveRaw, 6));
@@ -97,28 +100,25 @@ export async function loadOnchainTokenSnapshot(client: PublicClient, token: Toke
   const launchPrice = virtualUsdc / initialReserve;
   const progress = raisedUsdc / token.targetUSDC * 100;
 
-  const events = [
-    ...buyLogs.map((log) => ({
-      blockNumber: log.blockNumber ?? 0n,
-      logIndex: log.logIndex ?? 0,
-      hash: log.transactionHash as Hash,
-      wallet: log.args.buyer as Address,
-      type: "Buy" as const,
-      usdc: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
-      notional: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
-      tokens: Number(formatUnits(log.args.tokensOut ?? 0n, 18)),
-    })),
-    ...sellLogs.map((log) => ({
-      blockNumber: log.blockNumber ?? 0n,
-      logIndex: log.logIndex ?? 0,
-      hash: log.transactionHash as Hash,
-      wallet: log.args.seller as Address,
-      type: "Sell" as const,
-      usdc: Number(formatUnits(log.args.usdcOut ?? 0n, 6)),
-      notional: Number(formatUnits((log.args.usdcOut ?? 0n) + (log.args.fee ?? 0n), 6)),
-      tokens: Number(formatUnits(log.args.tokensIn ?? 0n, 18)),
-    })),
-  ].sort((left, right) => left.blockNumber === right.blockNumber
+  const events = tradeLogs.map((log) => log.eventName === "TokenBought" ? {
+    blockNumber: log.blockNumber ?? 0n,
+    logIndex: log.logIndex ?? 0,
+    hash: log.transactionHash as Hash,
+    wallet: log.args.buyer as Address,
+    type: "Buy" as const,
+    usdc: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
+    notional: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
+    tokens: Number(formatUnits(log.args.tokensOut ?? 0n, 18)),
+  } : {
+    blockNumber: log.blockNumber ?? 0n,
+    logIndex: log.logIndex ?? 0,
+    hash: log.transactionHash as Hash,
+    wallet: log.args.seller as Address,
+    type: "Sell" as const,
+    usdc: Number(formatUnits(log.args.usdcOut ?? 0n, 6)),
+    notional: Number(formatUnits((log.args.usdcOut ?? 0n) + (log.args.fee ?? 0n), 6)),
+    tokens: Number(formatUnits(log.args.tokensIn ?? 0n, 18)),
+  }).sort((left, right) => left.blockNumber === right.blockNumber
     ? left.logIndex - right.logIndex
     : left.blockNumber < right.blockNumber ? -1 : 1);
 
@@ -146,8 +146,8 @@ export async function loadOnchainTokenSnapshot(client: PublicClient, token: Toke
     priceChange: (price / launchPrice - 1) * 100,
     marketCap: price * totalSupply,
     volume: events.reduce((sum, event) => sum + event.notional, 0),
-    buyers: buyLogs.length,
-    sellers: sellLogs.length,
+    buyers: tradeLogs.filter((log) => log.eventName === "TokenBought").length,
+    sellers: tradeLogs.filter((log) => log.eventName === "TokenSold").length,
     raisedUsdc,
     progress,
     tokensSold: initialReserve - tokenReserve,

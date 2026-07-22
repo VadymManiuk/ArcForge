@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { formatUnits, parseAbiItem, type Address, type Hash, type PublicClient } from "viem";
-import { usePublicClient } from "wagmi";
+import { formatUnits, isAddress, parseAbiItem, publicActions, type Address, type GetLogsReturnType, type Hash, type PublicClient } from "viem";
+import { usePublicClient, useWalletClient } from "wagmi";
 import { loadOnchainTokenSnapshot, type OnchainTokenSnapshot } from "@/components/onchain-token-dashboard";
 import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_FIRST_LAUNCH_BLOCK, arcTestnet } from "@/lib/chains";
 import { genesisToken } from "@/lib/mock-data";
@@ -18,6 +18,60 @@ const curveConfigAbi = [
   { type: "function", name: "virtualUsdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "graduationThreshold", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
+const TOKEN_INDEX_CACHE_KEY = `arcforge:${arcTestnet.id}:${ARC_TESTNET_CONTRACTS.factory.toLowerCase()}:factory-index`;
+const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
+const TOKEN_INDEX_BLOCK_CHUNK = 10_000n;
+
+type CachedIndex = { savedAt: number; tokens: TokenData[] };
+
+function isCachedToken(value: unknown): value is TokenData {
+  if (!value || typeof value !== "object") return false;
+  const token = value as Partial<TokenData>;
+  return token.source === "onchain"
+    && typeof token.name === "string"
+    && typeof token.ticker === "string"
+    && typeof token.address === "string"
+    && isAddress(token.address)
+    && typeof token.curveAddress === "string"
+    && isAddress(token.curveAddress)
+    && typeof token.creator === "string"
+    && isAddress(token.creator)
+    && typeof token.launchBlock === "number"
+    && token.launchBlock >= Number(ARC_TESTNET_FIRST_LAUNCH_BLOCK)
+    && typeof token.launchTxHash === "string"
+    && /^0x[0-9a-fA-F]{64}$/.test(token.launchTxHash)
+    && typeof token.price === "number"
+    && Number.isFinite(token.price)
+    && typeof token.marketCap === "number"
+    && Number.isFinite(token.marketCap)
+    && Array.isArray(token.chartData)
+    && Array.isArray(token.recentTrades)
+    && Array.isArray(token.riskLabels)
+    && Boolean(token.creatorProfile);
+}
+
+function readCachedIndex(): CachedIndex | null {
+  try {
+    const raw = window.localStorage.getItem(TOKEN_INDEX_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CachedIndex>;
+    if (typeof parsed.savedAt !== "number" || Date.now() - parsed.savedAt > TOKEN_INDEX_CACHE_TTL) return null;
+    if (!Array.isArray(parsed.tokens) || parsed.tokens.length === 0 || parsed.tokens.length > 100 || !parsed.tokens.every(isCachedToken)) return null;
+    return { savedAt: parsed.savedAt, tokens: parsed.tokens };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedIndex(tokens: TokenData[]) {
+  try {
+    const snapshot: CachedIndex = { savedAt: Date.now(), tokens };
+    window.localStorage.setItem(TOKEN_INDEX_CACHE_KEY, JSON.stringify(snapshot));
+    return snapshot.savedAt;
+  } catch {
+    return null;
+  }
+}
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -79,7 +133,6 @@ async function hydrateLaunch(
     transactionHash: Hash;
   },
   creatorLaunches: number,
-  includeMarketData: boolean,
 ) {
   if (launch.token.toLowerCase() === genesisToken.address.toLowerCase()) {
     const base = {
@@ -93,7 +146,7 @@ async function hydrateLaunch(
       launchTxHash: launch.transactionHash,
       creatorProfile: { ...genesisToken.creatorProfile, launches: creatorLaunches },
     };
-    return includeMarketData ? applySnapshot(base, await loadOnchainTokenSnapshot(client, base)) : base;
+    return base;
   }
 
   const totalSupplyRaw = await withRpcRetry(() => client.readContract({
@@ -181,22 +234,37 @@ async function hydrateLaunch(
     creatorProfile,
     socials: {},
   };
-  return includeMarketData ? applySnapshot(base, await loadOnchainTokenSnapshot(client, base)) : base;
+  return base;
 }
 
 async function loadFactoryTokens(client: PublicClient, includeMarketData: boolean) {
-  const logs = await withRpcRetry(() => client.getLogs({
-    address: ARC_TESTNET_CONTRACTS.factory,
-    event: tokenLaunchedEvent,
-    fromBlock: ARC_TESTNET_FIRST_LAUNCH_BLOCK,
-    toBlock: "latest",
-  }));
+  const latestBlock = await withRpcRetry(() => client.getBlockNumber());
+  if (latestBlock < ARC_TESTNET_FIRST_LAUNCH_BLOCK) {
+    throw new Error("Arc RPC is behind the configured first Factory launch block.");
+  }
+  const logs: GetLogsReturnType<typeof tokenLaunchedEvent> = [];
+  for (let fromBlock = ARC_TESTNET_FIRST_LAUNCH_BLOCK; fromBlock <= latestBlock; fromBlock += TOKEN_INDEX_BLOCK_CHUNK) {
+    const chunkEnd = fromBlock + TOKEN_INDEX_BLOCK_CHUNK - 1n;
+    const toBlock = chunkEnd < latestBlock ? chunkEnd : latestBlock;
+    const chunk = await withRpcRetry(() => client.getLogs({
+      address: ARC_TESTNET_CONTRACTS.factory,
+      event: tokenLaunchedEvent,
+      fromBlock,
+      toBlock,
+    }));
+    logs.push(...chunk);
+    if (toBlock < latestBlock) await wait(150);
+  }
+  if (logs.length === 0) {
+    throw new Error("Arc RPC returned no Factory launches for the configured index range.");
+  }
   const counts = new Map<string, number>();
   for (const log of logs) {
     const creator = String(log.args.creator).toLowerCase();
     counts.set(creator, (counts.get(creator) ?? 0) + 1);
   }
   const tokens: TokenData[] = [];
+  let marketDataError: unknown;
   for (const log of logs.slice().reverse()) {
     const launch = {
       token: log.args.token as Address,
@@ -207,34 +275,89 @@ async function loadFactoryTokens(client: PublicClient, includeMarketData: boolea
       blockNumber: log.blockNumber ?? 0n,
       transactionHash: log.transactionHash as Hash,
     };
-    tokens.push(await hydrateLaunch(client, launch, counts.get(launch.creator.toLowerCase()) ?? 1, includeMarketData));
+    const base = await hydrateLaunch(client, launch, counts.get(launch.creator.toLowerCase()) ?? 1);
+    if (!includeMarketData) {
+      tokens.push(base);
+    } else {
+      try {
+        tokens.push(applySnapshot(base, await loadOnchainTokenSnapshot(client, base)));
+      } catch (loadError) {
+        marketDataError ??= loadError;
+        tokens.push(base);
+      }
+    }
     await wait(500);
   }
-  return tokens;
+  return { tokens, marketDataError };
 }
 
-export function useFactoryTokenIndex({ includeMarketData = true }: { includeMarketData?: boolean } = {}) {
-  const client = usePublicClient({ chainId: arcTestnet.id });
+export function useFactoryTokenIndex({ includeMarketData = true, allowCache = true }: { includeMarketData?: boolean; allowCache?: boolean } = {}) {
+  const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const { data: walletClient } = useWalletClient();
   const [tokens, setTokens] = useState<TokenData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isCached, setIsCached] = useState(false);
+  const [isPartial, setIsPartial] = useState(false);
+  const [cachedAt, setCachedAt] = useState<number | null>(null);
   const refresh = useCallback(async () => {
-    if (!client) return;
+    const walletReadClient = walletClient?.chain.id === arcTestnet.id
+      ? walletClient.extend(publicActions) as unknown as PublicClient
+      : null;
+    const clients = [walletReadClient, publicClient].filter((client): client is PublicClient => Boolean(client));
+    if (clients.length === 0) return;
     setLoading(true);
     setError("");
-    try {
-      setTokens(await loadFactoryTokens(client, includeMarketData));
-    } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : String(loadError);
-      setError(/rate limit|request limit|Too Many Requests|\b429\b|RPC Request failed|HTTP request failed/i.test(message)
-        ? "Arc Testnet RPC is rate-limited. Factory launches were not replaced with simulated data; retry in a moment."
-        : "Factory launch events could not be indexed from Arc Testnet.");
-    } finally {
-      setLoading(false);
+    let lastError: unknown;
+    let partialResult: Awaited<ReturnType<typeof loadFactoryTokens>> | null = null;
+    for (const client of clients) {
+      try {
+        const result = await loadFactoryTokens(client, includeMarketData);
+        if (result.marketDataError) {
+          partialResult ??= result;
+          lastError = result.marketDataError;
+          continue;
+        }
+        setTokens(result.tokens);
+        setIsCached(false);
+        setIsPartial(false);
+        setCachedAt(allowCache && includeMarketData ? writeCachedIndex(result.tokens) : null);
+        setLoading(false);
+        return;
+      } catch (loadError) {
+        lastError = loadError;
+      }
     }
-  }, [client, includeMarketData]);
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    if (partialResult) {
+      setTokens(partialResult.tokens);
+      setIsCached(false);
+      setIsPartial(true);
+      setCachedAt(null);
+      setError(/rate limit|request limit|Too Many Requests|\b429\b|RPC Request failed|HTTP request failed/i.test(message)
+        ? "Factory launches are confirmed, but Arc Testnet RPC rate-limited live market values. Retry will use Rabby first."
+        : "Factory launches are confirmed, but live market values could not be loaded.");
+      setLoading(false);
+      return;
+    }
+    setIsCached(true);
+    setIsPartial(false);
+    setError(/rate limit|request limit|Too Many Requests|\b429\b|RPC Request failed|HTTP request failed/i.test(message)
+      ? "Arc Testnet RPC is rate-limited. Retry will use Rabby first, then the public RPC."
+      : "Factory launch events could not be indexed from Arc Testnet.");
+    setLoading(false);
+  }, [allowCache, includeMarketData, publicClient, walletClient]);
 
   useEffect(() => {
+    if (allowCache && includeMarketData) {
+      const cached = readCachedIndex();
+      if (cached) {
+        setTokens(cached.tokens);
+        setIsCached(true);
+        setIsPartial(false);
+        setCachedAt(cached.savedAt);
+      }
+    }
     void refresh();
     const handleRefresh = () => void refresh();
     window.addEventListener("arcforge:launch-confirmed", handleRefresh);
@@ -243,7 +366,7 @@ export function useFactoryTokenIndex({ includeMarketData = true }: { includeMark
       window.removeEventListener("arcforge:launch-confirmed", handleRefresh);
       window.removeEventListener("arcforge:trade-confirmed", handleRefresh);
     };
-  }, [refresh]);
+  }, [allowCache, includeMarketData, refresh]);
 
-  return { tokens, loading, error, refresh };
+  return { tokens, loading, error, refresh, isCached, isPartial, cachedAt };
 }

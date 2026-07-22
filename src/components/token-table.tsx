@@ -9,7 +9,7 @@ import { Badge, Button, Progress, RiskBadge, TokenIcon } from "./ui";
 
 const filters = ["All", "New", "Trending", "Graduating soon", "High volume", "Low risk", "New creators", "Verified creators", "High risk", "Recently launched"];
 type SortKey = "volume24h" | "marketCap" | "raisedUSDC" | "buyers" | "ageMinutes" | "riskScore" | "curveProgress";
-type OnchainState = "loading" | "live" | "unavailable";
+type OnchainState = "loading" | "live" | "cached" | "unavailable";
 
 export function TokenTable({
   tokens,
@@ -70,10 +70,10 @@ export function TokenTable({
       <table className="w-full min-w-[1380px] text-left text-xs [&_td]:px-3 [&_th]:px-3">
         <thead><tr className="border-b border-line bg-white/[.015] font-mono text-[9px] uppercase tracking-[.14em] text-slate-600"><th className="px-4 py-3">Token</th><th>Age</th><th>Price / change</th><th>Market cap</th><th>Raised</th><th>Volume</th><th>Buy / Sell</th><th>Trades</th><th>Holders</th><th className="w-32">Curve</th><th>Risk</th><th>Status</th><th></th></tr></thead>
         <tbody>{shown.map((token) => {
-          const awaitingLive = token.source === "onchain" && onchainState !== "live";
+          const awaitingLive = token.source === "onchain" && (onchainState === "loading" || onchainState === "unavailable");
           const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
           return <tr key={token.address} className="border-b border-line/60 transition last:border-0 hover:bg-white/[.025]">
-            <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon}/><div><div className="flex items-center gap-2"><p className="font-semibold text-white">{token.name}</p>{token.source === "onchain" ? <Badge tone={onchainState === "unavailable" ? "neutral" : "good"}>{onchainState === "loading" ? "Reading…" : onchainState === "unavailable" ? "RPC unavailable" : "Onchain"}</Badge> : <Badge tone="neutral">Demo</Badge>}</div><p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p></div></Link></td>
+            <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon}/><div><div className="flex items-center gap-2"><p className="font-semibold text-white">{token.name}</p>{token.source === "onchain" ? <Badge tone={onchainState === "unavailable" || onchainState === "cached" ? "neutral" : "good"}>{onchainState === "loading" ? "Reading…" : onchainState === "cached" ? "Cached onchain" : onchainState === "unavailable" ? "RPC unavailable" : "Onchain"}</Badge> : <Badge tone="neutral">Demo</Badge>}</div><p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p></div></Link></td>
             <td className="text-slate-400">{token.source === "onchain" ? "Arc Testnet" : age(token.ageMinutes)}</td>
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><p className="text-slate-200">{money(token.price)}</p><p className={token.priceChange24h >= 0 ? "mt-1 text-emerald-400" : "mt-1 text-rose-400"}>{token.source === "onchain" ? "Since launch " : ""}{token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</p></>}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.marketCap, true)}</td>

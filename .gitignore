@@ -11,3 +11,4 @@ typechain-types
 *.log
 *.tsbuildinfo
 .DS_Store
+**/* 2.tsx

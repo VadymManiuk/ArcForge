@@ -14,6 +14,7 @@
     "deploy:arc-testnet:v2": "hardhat run scripts/deploy-factory-v2.cjs --network arcTestnet --config hardhat.config.cjs",
     "deploy:arc-testnet:v2:activate": "hardhat run scripts/activate-factory-v2.cjs --network arcTestnet --config hardhat.config.cjs",
     "verify:arc-testnet": "hardhat run scripts/verify-deployment.cjs --network arcTestnet --config hardhat.config.cjs",
+    "smoke:metadata-upload": "node scripts/smoke-metadata-upload.mjs",
     "test": "pnpm contracts:test"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "recharts": "^3.1.0",
+    "sharp": "^0.35.3",
     "tailwind-merge": "^3.3.0",
     "viem": "^2.33.0",
     "wagmi": "^2.16.0"

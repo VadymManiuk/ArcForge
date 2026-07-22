@@ -5,9 +5,13 @@ import { arcTestnet } from "@/lib/chains";
 import { genesisToken } from "@/lib/mock-data";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
+import { resolveTokenMetadata } from "@/lib/server/token-metadata-resolver";
 import type { CreatorProfile, TokenData } from "@/lib/types";
 
-const tokenConfigAbi = [{ type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] }] as const;
+const tokenConfigAbi = [
+  { type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "metadataURI", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+] as const;
 const curveConfigAbi = [
   { type: "function", name: "initialTokenReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "virtualUsdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
@@ -78,7 +82,19 @@ function iconFor(name: string, symbol: string) {
 async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
   const cacheKey = launch.token.toLowerCase();
   const cached = state.hydratedTokens.get(cacheKey);
-  if (cached) return { ...cached, creatorProfile: { ...cached.creatorProfile, launches: creatorLaunches } };
+  if (cached) {
+    const metadata = cached.metadataURI ? await resolveTokenMetadata(cached.metadataURI) : null;
+    return {
+      ...cached,
+      image: metadata?.image ?? cached.image,
+      description: metadata?.description ?? cached.description,
+      socials: {
+        website: metadata?.website ?? cached.socials.website,
+        x: metadata?.x ?? cached.socials.x,
+      },
+      creatorProfile: { ...cached.creatorProfile, launches: creatorLaunches },
+    };
+  }
 
   if (launch.token.toLowerCase() === genesisToken.address.toLowerCase()) {
     const token: TokenData = {
@@ -97,10 +113,14 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     return token;
   }
 
-  const totalSupplyRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" }));
-  const initialReserveRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "initialTokenReserve" }));
-  const virtualUsdcRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "virtualUsdcReserve" }));
-  const graduationRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "graduationThreshold" }));
+  const [totalSupplyRaw, metadataURI, initialReserveRaw, virtualUsdcRaw, graduationRaw] = await Promise.all([
+    withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" })),
+    withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" })),
+    withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "initialTokenReserve" })),
+    withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "virtualUsdcReserve" })),
+    withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "graduationThreshold" })),
+  ]);
+  const metadata = await resolveTokenMetadata(metadataURI);
   const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
   const initialReserve = Number(formatUnits(initialReserveRaw, 18));
   const creatorAllocationPercent = totalSupply > 0 ? (totalSupply - initialReserve) / totalSupply * 100 : 0;
@@ -113,7 +133,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     noBlacklist: true,
     noHiddenMint: true,
     creatorAllocationPercent,
-    socialsPresent: false,
+    socialsPresent: Boolean(metadata?.website || metadata?.x),
     verifiedTemplate: true,
     holderConcentrationKnown: false,
     topTenHolderPercent: 100,
@@ -134,6 +154,8 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     name: launch.name,
     ticker: launch.symbol,
     icon: iconFor(launch.name, launch.symbol),
+    image: metadata?.image,
+    metadataURI,
     address: launch.token,
     curveAddress: launch.curve,
     creator: launch.creator,
@@ -143,7 +165,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     launchBlock: Number(launch.launchBlock),
     totalSupply,
     virtualUsdcReserve,
-    description: "ArcOrigin factory launch indexed from Arc Testnet events.",
+    description: metadata?.description ?? "ArcOrigin factory launch indexed from Arc Testnet events.",
     ageMinutes: 0,
     price: launchPrice,
     priceChange24h: 0,
@@ -164,7 +186,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     recentTrades: [],
     riskLabels: risk.labels,
     creatorProfile,
-    socials: {},
+    socials: { website: metadata?.website, x: metadata?.x },
   };
   state.hydratedTokens.set(cacheKey, token);
   return token;

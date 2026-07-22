@@ -38,8 +38,10 @@ export function RiskBadge({ score }: { score: number }) {
   return <Badge tone={tone}><ShieldCheck className="mr-1 size-3" />{score} score</Badge>;
 }
 
-export function TokenIcon({ label, className }: { label: string; className?: string }) {
-  return <div className={cn("grid size-10 shrink-0 place-items-center rounded-xl border border-cyan/20 bg-cyan/[.09] font-mono text-[11px] font-semibold text-cyan", className)}>{label}</div>;
+export function TokenIcon({ label, image, className }: { label: string; image?: string; className?: string }) {
+  return <div className={cn("relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border border-cyan/20 bg-cyan/[.09] font-mono text-[11px] font-semibold text-cyan", className)}>
+    {image ? <span role="img" aria-label={`${label} token image`} className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${image})` }} /> : label}
+  </div>;
 }
 
 export function Progress({ value }: { value: number }) { return <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, value)}%` }} /></div>; }

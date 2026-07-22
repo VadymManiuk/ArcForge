@@ -1,41 +1,50 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
-import { Check, ChevronRight, ExternalLink, Rocket } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { AtSign, Check, ChevronRight, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, X } from "lucide-react";
 import { decodeEventLog, formatUnits, publicActions, type Address, type Hash } from "viem";
-import {
-  useAccount,
-  usePublicClient,
-  useSwitchChain,
-  useWalletClient,
-  useWriteContract,
-} from "wagmi";
+import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
 import { erc20Abi, factoryAbi } from "@/lib/contracts";
+import {
+  TOKEN_DESCRIPTION_MAX_LENGTH,
+  TOKEN_IMAGE_INPUT_MAX_BYTES,
+  TOKEN_IMAGE_MAX_BYTES,
+  canonicalMetadataCommitment,
+  validateTokenMetadataInput,
+  type TokenMetadataInput,
+} from "@/lib/token-metadata";
 import { shortAddress } from "@/lib/utils";
 import { Button, Progress, WarningBox } from "./ui";
 
 type FormData = {
   name: string;
   ticker: string;
+  description: string;
+  website: string;
+  x: string;
   allocation: string;
-  metadata: string;
 };
 
-type TransactionStatus = "idle" | "checking" | "approving" | "launching";
-type LaunchResult = { token: Address; curve: Address; hash: Hash };
+type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching";
+type LaunchResult = { token: Address; curve: Address; hash: Hash; metadataURI: string; metadataURL: string };
+type UploadedMetadata = { commitment: string; metadataURI: string; gatewayURL: string };
 
 const defaults: FormData = {
   name: "",
   ticker: "",
+  description: "",
+  website: "",
+  x: "",
   allocation: "5",
-  metadata: "",
 };
 const confirmations = [
   "Fixed supply with no hidden mint",
   "No blacklist or transfer tax",
+  "Token media and links will be public on IPFS",
   "I understand the fee and launch risk",
 ];
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const LAUNCH_FEE = 25n * 10n ** 6n;
 const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
 const VIRTUAL_USDC_RESERVE = 10_000n * 10n ** 6n;
@@ -43,12 +52,11 @@ const GRADUATION_THRESHOLD = 50_000n * 10n ** 6n;
 
 function transactionError(error: unknown) {
   const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
+  if (/User rejected|User denied|rejected the request/i.test(fallback)) return "The request was cancelled in your wallet.";
   if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(fallback)) {
     return "Arc RPC is temporarily unavailable. Check Rabby activity or Arcscan before retrying because an approval or launch may already have been submitted.";
   }
-  if (typeof error === "object" && error && "shortMessage" in error) {
-    return String(error.shortMessage);
-  }
+  if (typeof error === "object" && error && "shortMessage" in error) return String(error.shortMessage);
   return fallback;
 }
 
@@ -70,34 +78,169 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
   throw new Error("Arc RPC request failed after retries.");
 }
 
+async function sha256Hex(value: ArrayBuffer | string) {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return `0x${Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function canvasBlob(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob(
+    (blob) => blob ? resolve(blob) : reject(new Error("The image could not be optimized.")),
+    "image/webp",
+    quality,
+  ));
+}
+
+async function optimizeImage(file: File) {
+  if (!IMAGE_TYPES.includes(file.type)) throw new Error("Choose a PNG, JPG, or WebP image.");
+  if (file.size > TOKEN_IMAGE_INPUT_MAX_BYTES) throw new Error("The original image must be 8 MB or smaller.");
+  const bitmap = await createImageBitmap(file);
+  try {
+    if (bitmap.width * bitmap.height > 40_000_000) throw new Error("Image dimensions are too large. Use an image below 40 megapixels.");
+    const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) throw new Error("Your browser could not process the image.");
+    context.drawImage(bitmap, 0, 0, width, height);
+    let blob = await canvasBlob(canvas, 0.86);
+    if (blob.size > TOKEN_IMAGE_MAX_BYTES) blob = await canvasBlob(canvas, 0.68);
+    if (blob.size > TOKEN_IMAGE_MAX_BYTES) throw new Error("The optimized image is still larger than 2 MB. Choose a simpler image.");
+    return new File([blob], "token-image.webp", { type: "image/webp" });
+  } finally {
+    bitmap.close();
+  }
+}
+
 export function LaunchForm() {
+  const descriptionId = useId();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(defaults);
+  const [image, setImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [imageError, setImageError] = useState("");
+  const [imageProcessing, setImageProcessing] = useState(false);
   const [checks, setChecks] = useState<string[]>([]);
   const [status, setStatus] = useState<TransactionStatus>("idle");
+  const [storageStatus, setStorageStatus] = useState<"unknown" | "available" | "unavailable">("unknown");
+  const [uploadedMetadata, setUploadedMetadata] = useState<UploadedMetadata | null>(null);
   const [error, setError] = useState("");
   const [result, setResult] = useState<LaunchResult | null>(null);
+  const previewUrl = useRef("");
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
-  const update = (key: keyof FormData, value: string) =>
-    setForm((current) => ({ ...current, [key]: value }));
-  const canContinue = useMemo(
-    () =>
-      step === 1
-        ? form.name.trim().length >= 2 &&
-          form.name.trim().length <= 64 &&
-          /^[A-Za-z0-9]{2,10}$/.test(form.ticker) &&
-          form.metadata.trim().length <= 512
-        : step === 2
-          ? Number(form.allocation) >= 0 && Number(form.allocation) <= 20
-          : checks.length === confirmations.length,
-    [step, form, checks],
-  );
+  useEffect(() => {
+    void fetch("/api/metadata/status", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: { available?: boolean }) => setStorageStatus(payload.available ? "available" : "unavailable"))
+      .catch(() => setStorageStatus("unavailable"));
+    return () => {
+      if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+    };
+  }, []);
+
+  const metadataInput = useMemo<TokenMetadataInput>(() => ({
+    name: form.name,
+    symbol: form.ticker,
+    description: form.description,
+    website: form.website,
+    x: form.x,
+  }), [form.name, form.ticker, form.description, form.website, form.x]);
+
+  const identityValid = useMemo(() => {
+    try {
+      validateTokenMetadataInput(metadataInput);
+      return storageStatus === "available";
+    } catch {
+      return false;
+    }
+  }, [metadataInput, storageStatus]);
+  const canContinue = step === 1
+    ? identityValid && !imageProcessing
+    : step === 2
+      ? Number(form.allocation) >= 0 && Number(form.allocation) <= 20
+      : checks.length === confirmations.length;
   const isPending = status !== "idle";
+
+  function update(key: keyof FormData, value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+    if (key !== "allocation") setUploadedMetadata(null);
+  }
+
+  async function selectImage(file: File | null) {
+    setImageError("");
+    if (!file) return;
+    setImageProcessing(true);
+    try {
+      const optimized = await optimizeImage(file);
+      if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+      previewUrl.current = URL.createObjectURL(optimized);
+      setImage(optimized);
+      setImagePreview(previewUrl.current);
+      setUploadedMetadata(null);
+    } catch (selectionError) {
+      setImageError(selectionError instanceof Error ? selectionError.message : "The image could not be processed.");
+    } finally {
+      setImageProcessing(false);
+    }
+  }
+
+  function removeImage() {
+    if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+    previewUrl.current = "";
+    setImage(null);
+    setImagePreview("");
+    setImageError("");
+    setUploadedMetadata(null);
+  }
+
+  async function ensureMetadata(creator: Address) {
+    if (!walletClient) throw new Error("Connect Rabby before uploading token metadata.");
+    const normalized = validateTokenMetadataInput(metadataInput);
+    const imageSha256 = image ? await sha256Hex(await image.arrayBuffer()) : "";
+    const commitment = await sha256Hex(canonicalMetadataCommitment(normalized, imageSha256));
+    if (uploadedMetadata?.commitment === commitment) return uploadedMetadata;
+
+    setStatus("signing_metadata");
+    const challengeResponse = await fetch("/api/metadata/challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: creator, commitment }),
+    });
+    const challenge = await challengeResponse.json() as { nonce?: string; message?: string; error?: string };
+    if (!challengeResponse.ok || !challenge.nonce || !challenge.message) {
+      throw new Error(challenge.error ?? "Metadata upload authorization failed.");
+    }
+    const signature = await walletClient.signMessage({ account: creator, message: challenge.message });
+
+    setStatus("uploading_metadata");
+    const body = new FormData();
+    body.append("nonce", challenge.nonce);
+    body.append("address", creator);
+    body.append("signature", signature);
+    body.append("name", normalized.name);
+    body.append("symbol", normalized.symbol);
+    body.append("description", normalized.description);
+    body.append("website", normalized.website);
+    body.append("x", normalized.x);
+    if (image) body.append("image", image);
+    const uploadResponse = await fetch("/api/metadata/upload", { method: "POST", body });
+    const upload = await uploadResponse.json() as { metadataURI?: string; gatewayURL?: string; error?: string };
+    if (!uploadResponse.ok || !upload.metadataURI || !upload.gatewayURL) {
+      throw new Error(upload.error ?? "Token metadata upload failed.");
+    }
+    const uploaded = { commitment, metadataURI: upload.metadataURI, gatewayURL: upload.gatewayURL };
+    setUploadedMetadata(uploaded);
+    return uploaded;
+  }
 
   async function launch() {
     if (!isConnected || !address) {
@@ -114,12 +257,10 @@ export function LaunchForm() {
     try {
       if (chainId !== arcTestnet.id) {
         await switchChainAsync({ chainId: arcTestnet.id });
-        throw new Error("Arc Testnet is now selected. Click Launch on Arc Testnet again.");
+        throw new Error("Arc Testnet is now selected. Review and launch again.");
       }
-
       const transactionClient = walletClient?.extend(publicActions) ?? publicClient;
       if (!transactionClient) throw new Error("No Arc Testnet client is available.");
-
       const balance = await withRpcRetry(() => transactionClient.readContract({
         address: ARC_TESTNET_CONTRACTS.usdc,
         abi: erc20Abi,
@@ -127,11 +268,10 @@ export function LaunchForm() {
         args: [address],
       }));
       if (balance < LAUNCH_FEE) {
-        throw new Error(
-          `You have ${formatUnits(balance, 6)} USDC, but the launch fee is 25 USDC. Add testnet USDC and retry.`,
-        );
+        throw new Error(`You have ${formatUnits(balance, 6)} USDC, but the launch fee is 25 USDC. Add testnet USDC and retry.`);
       }
 
+      const metadata = await ensureMetadata(address);
       const allowance = await withRpcRetry(() => transactionClient.readContract({
         address: ARC_TESTNET_CONTRACTS.usdc,
         abi: erc20Abi,
@@ -146,12 +286,8 @@ export function LaunchForm() {
           functionName: "approve",
           args: [ARC_TESTNET_CONTRACTS.factory, LAUNCH_FEE],
         });
-        const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({
-          hash: approvalHash,
-        }));
-        if (approvalReceipt.status !== "success") {
-          throw new Error("USDC approval reverted onchain.");
-        }
+        const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
+        if (approvalReceipt.status !== "success") throw new Error("USDC approval reverted onchain.");
       }
 
       setStatus("launching");
@@ -162,7 +298,7 @@ export function LaunchForm() {
         args: [{
           name: form.name.trim(),
           symbol: form.ticker.toUpperCase(),
-          metadataURI: form.metadata.trim(),
+          metadataURI: metadata.metadataURI,
           totalSupply: TOTAL_SUPPLY,
           creatorAllocationBps: Math.round(Number(form.allocation) * 100),
           virtualUsdcReserve: VIRTUAL_USDC_RESERVE,
@@ -170,33 +306,20 @@ export function LaunchForm() {
         }],
       });
       const receipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: launchHash }));
-      if (receipt.status !== "success") {
-        throw new Error("Token launch reverted onchain.");
-      }
+      if (receipt.status !== "success") throw new Error("Token launch reverted onchain.");
 
       let launched: LaunchResult | null = null;
       for (const log of receipt.logs) {
         if (log.address.toLowerCase() !== ARC_TESTNET_CONTRACTS.factory.toLowerCase()) continue;
         try {
-          const event = decodeEventLog({
-            abi: factoryAbi,
-            eventName: "TokenLaunched",
-            data: log.data,
-            topics: log.topics,
-          });
-          launched = {
-            token: event.args.token,
-            curve: event.args.curve,
-            hash: launchHash,
-          };
+          const event = decodeEventLog({ abi: factoryAbi, eventName: "TokenLaunched", data: log.data, topics: log.topics });
+          launched = { token: event.args.token, curve: event.args.curve, hash: launchHash, metadataURI: metadata.metadataURI, metadataURL: metadata.gatewayURL };
           break;
         } catch {
           // The receipt includes constructor and registry logs from other contracts.
         }
       }
-      if (!launched) {
-        throw new Error("The launch succeeded, but its TokenLaunched event was not found.");
-      }
+      if (!launched) throw new Error("The launch succeeded, but its TokenLaunched event was not found.");
       setResult(launched);
       window.dispatchEvent(new CustomEvent("arcforge:launch-confirmed", {
         detail: { tokenAddress: launched.token, curveAddress: launched.curve, transactionHash: launchHash },
@@ -217,150 +340,164 @@ export function LaunchForm() {
     if (canContinue && !isPending) void launch();
   }
 
-  if (result) {
-    return (
-      <div className="panel mx-auto max-w-2xl p-8 text-center md:p-10">
-        <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-cyan/10 text-cyan">
-          <Rocket />
-        </div>
-        <p className="eyebrow mt-6">Onchain launch confirmed</p>
-        <h2 className="mt-3 text-3xl font-semibold text-white">
-          {form.name} · {form.ticker.toUpperCase()}
-        </h2>
-        <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">
-          The fixed-supply token and its USDC bonding curve are deployed on Arc Testnet.
-        </p>
-        <dl className="mx-auto mt-6 grid max-w-lg gap-3 rounded-xl border border-line bg-black/25 p-4 text-left text-xs">
-          <ResultRow label="Token" address={result.token} />
-          <ResultRow label="Bonding curve" address={result.curve} />
-          <div className="flex items-center justify-between gap-4">
-            <dt className="text-slate-500">Transaction</dt>
-            <dd><ExplorerLink path={`tx/${result.hash}`} label={shortAddress(result.hash)} /></dd>
-          </div>
-        </dl>
-        <Button
-          className="mt-6"
-          onClick={() => {
-            setResult(null);
-            setChecks([]);
-            setForm(defaults);
-            setStep(1);
-          }}
-        >
-          Create another
-        </Button>
-      </div>
-    );
+  function reset() {
+    setResult(null);
+    setChecks([]);
+    setForm(defaults);
+    setUploadedMetadata(null);
+    setStep(1);
+    removeImage();
   }
 
-  const actionLabel =
-    status === "checking"
-      ? "Checking balance…"
-      : status === "approving"
-        ? "Approving 25 USDC…"
-        : status === "launching"
-          ? "Launching on Arc…"
-          : step === 3
-            ? "Launch on Arc Testnet"
-            : "Continue";
+  if (result) {
+    return <div className="panel mx-auto max-w-2xl p-8 text-center md:p-10">
+      <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-cyan/10 text-cyan"><Rocket /></div>
+      <p className="eyebrow mt-6">Onchain launch confirmed</p>
+      <h2 className="mt-3 text-3xl font-semibold text-white">{form.name} · {form.ticker.toUpperCase()}</h2>
+      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your token metadata is pinned to public IPFS and the fixed-supply token with its USDC curve is deployed on Arc Testnet.</p>
+      <dl className="mx-auto mt-6 grid max-w-lg gap-3 rounded-xl border border-line bg-black/25 p-4 text-left text-xs">
+        <ResultRow label="Token" address={result.token} />
+        <ResultRow label="Bonding curve" address={result.curve} />
+        <ResultLink label="Metadata" href={result.metadataURL} value={result.metadataURI.slice(0, 22) + "…"} />
+        <ResultLink label="Transaction" href={`${EXPLORER_URL}/tx/${result.hash}`} value={shortAddress(result.hash)} />
+      </dl>
+      <Button className="mt-6" onClick={reset}>Create another</Button>
+    </div>;
+  }
 
-  return (
-    <form onSubmit={submit} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="panel p-5 md:p-7">
-        <div className="mb-7 flex items-center gap-3">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="flex flex-1 items-center gap-3">
-              <span className={`grid size-8 shrink-0 place-items-center rounded-full border text-xs ${step >= item ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-line text-slate-600"}`}>
-                {step > item ? <Check className="size-4" /> : item}
-              </span>
-              {item < 3 && <div className="h-px flex-1 bg-line" />}
-            </div>
-          ))}
-        </div>
+  const actionLabel = status === "checking"
+    ? "Checking balance…"
+    : status === "signing_metadata"
+      ? "Sign metadata in Rabby…"
+      : status === "uploading_metadata"
+        ? "Publishing to IPFS…"
+        : status === "approving"
+          ? "Approving 25 USDC…"
+          : status === "launching"
+            ? "Launching on Arc…"
+            : step === 3 ? "Launch on Arc Testnet" : "Continue";
 
-        {step === 1 && (
-          <div className="grid gap-5">
-            <div><p className="eyebrow">01 · Identity</p><h2 className="mt-2 text-xl font-semibold">Define the launch</h2></div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Token name" required value={form.name} onChange={(value) => update("name", value)} placeholder="Forge Network" maxLength={64} />
-              <Field label="Ticker" required value={form.ticker} onChange={(value) => update("ticker", value.toUpperCase())} placeholder="FORGE" maxLength={10} />
-            </div>
-            <Field label="Metadata URI (optional)" value={form.metadata} onChange={(value) => update("metadata", value)} placeholder="ipfs://…" maxLength={512} />
-            <p className="text-[11px] leading-5 text-slate-500">Only the name, ticker, and metadata URI are written into the token contract. You can leave metadata empty.</p>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="grid gap-5">
-            <div><p className="eyebrow">02 · Economics</p><h2 className="mt-2 text-xl font-semibold">Configure transparent terms</h2></div>
-            <Field label="Creator allocation %" value={form.allocation} onChange={(value) => update("allocation", value)} type="number" min="0" max="20" step="0.01" />
-            <div className="rounded-xl border border-line bg-black/20 p-4">
-              <p className="label">Creator wallet</p>
-              <p className="font-mono text-xs text-slate-300">{address ?? "Connect a wallet in the header"}</p>
-              <p className="mt-2 text-[11px] text-slate-500">The factory always assigns creator ownership to the wallet that signs the launch.</p>
-            </div>
-            <WarningBox>The contract enforces a maximum 20% creator allocation. Supply is fixed at deployment and the remaining tokens fund the curve.</WarningBox>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="grid gap-5">
-            <div><p className="eyebrow">03 · Verify</p><h2 className="mt-2 text-xl font-semibold">Confirm launch conditions</h2></div>
-            <div className="grid gap-2">
-              {confirmations.map((item) => (
-                <label key={item} className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[.018] p-3 text-sm text-slate-300">
-                  <input type="checkbox" className="accent-cyan" checked={checks.includes(item)} onChange={() => setChecks((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item])} />
-                  {item}
-                </label>
-              ))}
-            </div>
-            <WarningBox>Launching requires 25 testnet USDC. Your wallet may ask for an ERC-20 approval first, followed by the factory launch transaction.</WarningBox>
-          </div>
-        )}
-
-        {error && <p role="alert" className="mt-5 rounded-xl border border-rose-400/20 bg-rose-400/[.07] p-3 text-xs leading-5 text-rose-200">{error}</p>}
-        <div className="mt-8 flex justify-between border-t border-line pt-5">
-          {step > 1 ? <Button type="button" variant="ghost" disabled={isPending} onClick={() => setStep((current) => current - 1)}>Back</Button> : <span />}
-          <Button type="submit" disabled={!canContinue || isPending}>
-            {actionLabel}{!isPending && <ChevronRight className="size-4" />}
-          </Button>
-        </div>
+  return <form onSubmit={submit} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="panel p-5 md:p-7">
+      <div className="mb-7 flex items-center gap-3">
+        {[1, 2, 3].map((item) => <div key={item} className="flex flex-1 items-center gap-3">
+          <span className={`grid size-8 shrink-0 place-items-center rounded-full border text-xs ${step >= item ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-line text-slate-600"}`}>{step > item ? <Check className="size-4" /> : item}</span>
+          {item < 3 && <div className="h-px flex-1 bg-line" />}
+        </div>)}
       </div>
 
-      <aside className="panel h-fit p-5 lg:sticky lg:top-24">
-        <p className="eyebrow">Launch preview</p>
-        <div className="mt-5 flex items-center gap-3">
-          <div className="grid size-12 place-items-center rounded-xl border border-cyan/20 bg-cyan/[.08] font-mono text-xs text-cyan">{form.ticker.slice(0, 2) || "??"}</div>
-          <div><p className="font-semibold text-white">{form.name || "Untitled token"}</p><p className="font-mono text-xs text-slate-500">{form.ticker || "TICKER"}</p></div>
+      {step === 1 && <div className="grid gap-5">
+        <div><p className="eyebrow">01 · Identity</p><h2 className="mt-2 text-xl font-semibold">Create the token profile</h2></div>
+        <div className="grid gap-5 md:grid-cols-[152px_minmax(0,1fr)]">
+          <ImagePicker preview={imagePreview} processing={imageProcessing} error={imageError} onSelect={selectImage} onRemove={removeImage} />
+          <div className="grid content-start gap-4">
+            <Field label="Token name" required value={form.name} onChange={(value) => update("name", value)} placeholder="Forge Network" maxLength={64} />
+            <Field label="Ticker" required value={form.ticker} onChange={(value) => update("ticker", value.toUpperCase())} placeholder="FORGE" maxLength={10} />
+          </div>
         </div>
-        <dl className="mt-6 grid gap-3 text-xs">
-          <Row label="Supply" value="1,000,000,000" />
-          <Row label="Creator allocation" value={`${form.allocation || 0}%`} />
-          <Row label="Curve target" value="50,000 USDC" />
-          <Row label="Launch fee" value="25 USDC" />
-          <Row label="Buy / sell fee" value="1% / 1%" />
-          <Row label="Network" value="Arc Testnet" />
-          <Row label="Factory" value={shortAddress(ARC_TESTNET_CONTRACTS.factory)} />
-        </dl>
-        <div className="mt-5"><Progress value={step * 33.33} /></div>
-        <p className="mt-2 text-[10px] text-slate-600">Step {step} of 3 · onchain launch</p>
-      </aside>
-    </form>
-  );
+        <label htmlFor={descriptionId}>
+          <span className="label">Description *</span>
+          <textarea id={descriptionId} className="input min-h-28 resize-none py-3" required maxLength={TOKEN_DESCRIPTION_MAX_LENGTH} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="What is this token and what should holders know?" />
+          <span className="mt-1.5 block text-right text-[10px] text-slate-600">{form.description.length}/{TOKEN_DESCRIPTION_MAX_LENGTH}</span>
+        </label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field icon={<Globe className="size-4" />} label="Website (optional)" value={form.website} onChange={(value) => update("website", value)} placeholder="yourproject.xyz" maxLength={200} />
+          <Field icon={<AtSign className="size-4" />} label="X / Twitter (optional)" value={form.x} onChange={(value) => update("x", value)} placeholder="@yourproject" maxLength={200} />
+        </div>
+        {storageStatus === "unavailable" && <WarningBox>Media storage is not configured yet. Launching with a public token profile is temporarily disabled.</WarningBox>}
+        <p className="text-[11px] leading-5 text-slate-500">Images are resized to 1024 px and converted to WebP before upload. Metadata is public and content-addressed on IPFS; the contract stores only its immutable CID.</p>
+      </div>}
+
+      {step === 2 && <div className="grid gap-5">
+        <div><p className="eyebrow">02 · Economics</p><h2 className="mt-2 text-xl font-semibold">Configure transparent terms</h2></div>
+        <Field label="Creator allocation %" value={form.allocation} onChange={(value) => update("allocation", value)} type="number" min="0" max="20" step="0.01" />
+        <div className="rounded-xl border border-line bg-black/20 p-4">
+          <p className="label">Creator wallet</p>
+          <p className="break-all font-mono text-xs text-slate-300">{address ?? "Connect a wallet in the header"}</p>
+          <p className="mt-2 text-[11px] text-slate-500">The factory assigns the creator allocation to the wallet that signs the launch.</p>
+        </div>
+        <WarningBox>The contract enforces a maximum 20% creator allocation. Supply is fixed at deployment and the remaining tokens fund the curve.</WarningBox>
+      </div>}
+
+      {step === 3 && <div className="grid gap-5">
+        <div><p className="eyebrow">03 · Verify</p><h2 className="mt-2 text-xl font-semibold">Confirm launch conditions</h2></div>
+        <div className="grid gap-2">{confirmations.map((item) => <label key={item} className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[.018] p-3 text-sm text-slate-300">
+          <input type="checkbox" className="accent-cyan" checked={checks.includes(item)} onChange={() => setChecks((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item])} />
+          {item}
+        </label>)}</div>
+        <WarningBox>Rabby will first request a free metadata signature. If needed, it will then request a 25 USDC approval followed by the launch transaction.</WarningBox>
+      </div>}
+
+      {error && <p role="alert" className="mt-5 rounded-xl border border-rose-400/20 bg-rose-400/[.07] p-3 text-xs leading-5 text-rose-200">{error}</p>}
+      <div className="mt-8 flex justify-between border-t border-line pt-5">
+        {step > 1 ? <Button type="button" variant="ghost" disabled={isPending} onClick={() => setStep((current) => current - 1)}>Back</Button> : <span />}
+        <Button type="submit" disabled={!canContinue || isPending}>{isPending && <LoaderCircle className="size-4 animate-spin" />}{actionLabel}{!isPending && <ChevronRight className="size-4" />}</Button>
+      </div>
+    </div>
+
+    <aside className="panel h-fit p-5 lg:sticky lg:top-24">
+      <p className="eyebrow">Launch preview</p>
+      <div className="mt-5 flex items-center gap-3">
+        <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-cyan/20 bg-cyan/[.08] font-mono text-xs text-cyan">
+          {imagePreview ? <span role="img" aria-label="Token preview" className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${imagePreview})` }} /> : form.ticker.slice(0, 2) || "??"}
+        </div>
+        <div className="min-w-0"><p className="truncate font-semibold text-white">{form.name || "Untitled token"}</p><p className="font-mono text-xs text-slate-500">{form.ticker || "TICKER"}</p></div>
+      </div>
+      {form.description && <p className="mt-4 line-clamp-3 text-xs leading-5 text-slate-500">{form.description}</p>}
+      {(form.website || form.x) && <div className="mt-4 flex flex-wrap gap-2">{form.website && <PreviewTag icon={<Globe className="size-3" />} label="Website" />}{form.x && <PreviewTag icon={<AtSign className="size-3" />} label="X" />}</div>}
+      <dl className="mt-6 grid gap-3 text-xs">
+        <Row label="Supply" value="1,000,000,000" />
+        <Row label="Creator allocation" value={`${form.allocation || 0}%`} />
+        <Row label="Curve target" value="50,000 USDC" />
+        <Row label="Launch fee" value="25 USDC" />
+        <Row label="Buy / sell fee" value="1% / 1%" />
+        <Row label="Network" value="Arc Testnet" />
+        <Row label="Factory" value={shortAddress(ARC_TESTNET_CONTRACTS.factory)} />
+      </dl>
+      <div className="mt-5"><Progress value={step * 33.33} /></div>
+      <p className="mt-2 text-[10px] text-slate-600">Step {step} of 3 · onchain launch</p>
+    </aside>
+  </form>;
 }
 
-function ExplorerLink({ path, label }: { path: string; label: string }) {
-  return <a href={`${EXPLORER_URL}/${path}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan hover:underline">{label}<ExternalLink className="size-3" /></a>;
+function ImagePicker({ preview, processing, error, onSelect, onRemove }: { preview: string; processing: boolean; error: string; onSelect: (file: File | null) => Promise<void>; onRemove: () => void }) {
+  function accept(event: ChangeEvent<HTMLInputElement>) {
+    void onSelect(event.target.files?.[0] ?? null);
+    event.target.value = "";
+  }
+  function drop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    void onSelect(event.dataTransfer.files?.[0] ?? null);
+  }
+  return <div>
+    <span className="label">Token image</span>
+    <label onDragOver={(event) => event.preventDefault()} onDrop={drop} className="relative grid aspect-square cursor-pointer place-items-center overflow-hidden rounded-2xl border border-dashed border-line bg-black/20 text-center transition hover:border-cyan/40 hover:bg-cyan/[.025]">
+      <input type="file" className="sr-only" accept={IMAGE_TYPES.join(",")} onChange={accept} />
+      {preview ? <span role="img" aria-label="Selected token" className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${preview})` }} /> : <div className="p-4"><ImagePlus className="mx-auto size-6 text-cyan"/><p className="mt-3 text-xs font-medium text-slate-300">Choose image</p><p className="mt-1 text-[10px] leading-4 text-slate-600">PNG, JPG, WebP<br/>up to 8 MB</p></div>}
+      {processing && <div className="absolute inset-0 grid place-items-center bg-ink/80"><LoaderCircle className="size-5 animate-spin text-cyan" /></div>}
+    </label>
+    {preview && <button type="button" onClick={onRemove} className="mt-2 inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-white"><X className="size-3" /> Remove</button>}
+    {error && <p className="mt-2 text-[10px] leading-4 text-rose-300">{error}</p>}
+  </div>;
 }
 
 function ResultRow({ label, address }: { label: string; address: Address }) {
-  return <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">{label}</dt><dd><ExplorerLink path={`address/${address}`} label={shortAddress(address)} /></dd></div>;
+  return <ResultLink label={label} href={`${EXPLORER_URL}/address/${address}`} value={shortAddress(address)} />;
 }
 
-function Field({ label, value, onChange, ...props }: { label: string; value: string; onChange: (value: string) => void } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
-  return <label><span className="label">{label}{props.required && " *"}</span><input className="input" value={value} onChange={(event) => onChange(event.target.value)} {...props} /></label>;
+function ResultLink({ label, href, value }: { label: string; href: string; value: string }) {
+  return <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">{label}</dt><dd><a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan hover:underline">{value}<ExternalLink className="size-3" /></a></dd></div>;
+}
+
+function Field({ label, value, onChange, icon, ...props }: { label: string; value: string; onChange: (value: string) => void; icon?: React.ReactNode } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  const inputId = useId();
+  return <label htmlFor={inputId}><span className="label">{label}{props.required && " *"}</span><span className="relative block">{icon && <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600">{icon}</span>}<input id={inputId} className={`input ${icon ? "pl-10" : ""}`} value={value} onChange={(event) => onChange(event.target.value)} {...props} /></span></label>;
+}
+
+function PreviewTag({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return <span className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[.025] px-2 py-1 text-[10px] text-slate-400">{icon}{label}</span>;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
-  return <div className="flex justify-between"><dt className="text-slate-500">{label}</dt><dd className="text-slate-200">{value}</dd></div>;
+  return <div className="flex justify-between gap-3"><dt className="text-slate-500">{label}</dt><dd className="text-right text-slate-200">{value}</dd></div>;
 }

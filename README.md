@@ -22,6 +22,8 @@ pnpm contracts:test
 pnpm dev
 ```
 
+Copy `.env.example` to `.env`. `PINATA_JWT` enables wallet-authorized image and token metadata uploads to public IPFS; keep it server-only. `IPFS_GATEWAY_URL` is optional and defaults to Pinata's public gateway.
+
 Validation:
 
 ```bash
@@ -42,6 +44,8 @@ The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity na
 - `MockUSDC`: unrestricted minting for local tests only.
 
 The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Liquidity migration remains a documented placeholder and is not implemented. The active Arc Testnet V2 Factory uses pool-favoring reserve rounding and keeps post-graduation sells open. Tokens created by the legacy Factory retain their original curve behavior and remain indexed and tradeable through their deployed curves.
+
+Launch metadata uses an immutable `ipfs://` CID stored by the token contract. The upload endpoint validates and optimizes images, requires a one-time wallet signature bound to the exact metadata payload, rate-limits uploads by wallet and client, and never exposes the storage credential to the browser.
 
 ### Deploy to Arc Testnet
 

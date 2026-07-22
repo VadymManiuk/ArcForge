@@ -44,6 +44,8 @@ export type TokenData = {
   name: string;
   ticker: string;
   address: string;
+  image?: string;
+  metadataURI?: string;
   curveAddress?: string;
   source?: "onchain" | "demo";
   creatorAllocationPercent?: number;

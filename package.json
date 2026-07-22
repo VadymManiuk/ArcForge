@@ -12,6 +12,7 @@
     "contracts:test": "hardhat test --config hardhat.config.cjs",
     "deploy:arc-testnet": "hardhat run scripts/deploy.cjs --network arcTestnet --config hardhat.config.cjs",
     "deploy:arc-testnet:v2": "hardhat run scripts/deploy-factory-v2.cjs --network arcTestnet --config hardhat.config.cjs",
+    "deploy:arc-testnet:v2:activate": "hardhat run scripts/activate-factory-v2.cjs --network arcTestnet --config hardhat.config.cjs",
     "verify:arc-testnet": "hardhat run scripts/verify-deployment.cjs --network arcTestnet --config hardhat.config.cjs",
     "test": "pnpm contracts:test"
   },

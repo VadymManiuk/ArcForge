@@ -60,10 +60,7 @@ async function main() {
   console.log(`V2 factory deployment submitted: ${factory.deploymentTransaction().hash}`);
   await factory.waitForDeployment();
   const factoryAddress = await factory.getAddress();
-  const activation = await registry.setFactory(factoryAddress);
-  console.log(`Registry activation submitted: ${activation.hash}`);
-  await activation.wait();
-  assertEqual("activated registry factory", await registry.factory(), factoryAddress);
+  assertEqual("registry remains on previous factory", await registry.factory(), current.contracts.factory);
 
   const output = {
     ...current,
@@ -77,12 +74,13 @@ async function main() {
       preservesFeeVault: true,
       preservesCreatorRegistry: true,
       previousFactory: current.contracts.factory,
-      registryActivationTx: activation.hash,
+      registryActivationTx: null,
     },
   };
   fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
   console.log(`V2 candidate manifest written to ${outputPath}`);
   console.log(`V2 Factory: ${factoryAddress}`);
+  console.log("The registry was not changed. Run deploy:arc-testnet:v2:activate only after frontend migration checks pass.");
 }
 
 main().catch((error) => {

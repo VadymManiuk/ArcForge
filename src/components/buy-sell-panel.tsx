@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Settings2 } from "lucide-react";
 import {
   formatUnits,
@@ -24,7 +24,7 @@ import { ArcscanLink, Badge, Button, WarningBox } from "./ui";
 
 type Side = "Buy" | "Sell";
 type LiveQuote = { input: bigint; output: bigint; fee: bigint; minimumOutput: bigint };
-type TransactionStatus = "idle" | "quoting" | "approving" | "trading";
+type TransactionStatus = "idle" | "quoting" | "preparing" | "approving" | "trading";
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -51,7 +51,7 @@ function transactionError(error: unknown) {
       ? error.message
       : "The wallet transaction failed.";
   if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(message)) {
-    return "Arc RPC is temporarily unavailable. No trade was sent. Please retry.";
+    return "Arc RPC is temporarily unavailable. Check Rabby activity or Arcscan before retrying because the transaction may already have been submitted.";
   }
   return message;
 }
@@ -78,6 +78,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [notice, setNotice] = useState("");
   const [transactionHash, setTransactionHash] = useState<Hash | null>(null);
+  const submissionLockRef = useRef(false);
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
   const { data: walletClient } = useWalletClient();
@@ -136,6 +137,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
 
   async function submitTrade() {
     if (!quote || !address) return;
+    if (submissionLockRef.current) return;
+    submissionLockRef.current = true;
+    setStatus("preparing");
     setNotice("");
     setTransactionHash(null);
     try {
@@ -173,6 +177,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
             functionName: "sell",
             args: [quote.input, quote.minimumOutput],
           });
+      setTransactionHash(tradeHash);
       const receipt = await withRpcRetry(() => client.waitForTransactionReceipt({ hash: tradeHash }));
       if (receipt.status !== "success") throw new Error(`${side} transaction reverted onchain.`);
       setTransactionHash(tradeHash);
@@ -184,12 +189,15 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     } catch (error) {
       setNotice(transactionError(error));
     } finally {
+      submissionLockRef.current = false;
       setStatus("idle");
     }
   }
 
   const actionLabel = status === "quoting"
     ? "Reading curve…"
+    : status === "preparing"
+      ? "Preparing transaction…"
     : status === "approving"
       ? `Approving ${inputSymbol}…`
       : status === "trading"

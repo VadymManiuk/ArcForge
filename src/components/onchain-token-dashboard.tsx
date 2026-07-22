@@ -10,8 +10,37 @@ import { money, number } from "@/lib/utils";
 
 export type OnchainTokenSnapshot = MarketSnapshot;
 
+function createIndexedFallback(token: TokenData): OnchainTokenSnapshot {
+  const totalSupply = token.totalSupply ?? 1_000_000_000;
+  const initialReserve = totalSupply * (1 - (token.creatorAllocationPercent ?? 0) / 100);
+  const virtualUsdc = token.virtualUsdcReserve ?? 10_000;
+  const raisedUsdc = Math.max(0, token.raisedUSDC);
+  const tokenReserve = virtualUsdc + raisedUsdc > 0
+    ? initialReserve * virtualUsdc / (virtualUsdc + raisedUsdc)
+    : initialReserve;
+
+  return {
+    price: token.price,
+    priceChange: token.priceChange24h,
+    marketCap: token.marketCap,
+    volume: token.volume24h,
+    buyers: token.buyers,
+    sellers: token.sellers,
+    raisedUsdc,
+    targetUsdc: token.targetUSDC,
+    progress: token.curveProgress,
+    graduated: token.status === "Graduated",
+    tokensSold: Math.max(0, initialReserve - tokenReserve),
+    tokenReserve,
+    chart: token.chartData.length > 0 ? token.chartData : [{ time: "Launch", price: token.price, volume: 0 }],
+    trades: token.recentTrades,
+    indexedBlock: String(token.launchBlock ?? "Factory"),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 export function useOnchainTokenSnapshot(token: TokenData) {
-  const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot>(() => createIndexedFallback(token));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
@@ -27,7 +56,9 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       setStale(Boolean(payload.stale));
       if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Live market data could not be loaded.");
+      setStale(true);
+      const message = loadError instanceof Error ? loadError.message : "Live market data could not be loaded.";
+      setError(`Showing the latest Factory snapshot. ${message}`);
     } finally {
       setLoading(false);
     }
@@ -78,16 +109,6 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
     return () => window.removeEventListener("arcforge:trade-confirmed", handleTrade);
   }, [refreshHolders, token.address]);
-
-  if (!snapshot) {
-    return <Panel className="p-5">
-      <div className="flex items-center justify-between gap-4">
-        <div><p className="eyebrow">Onchain market data</p><p className="mt-2 text-sm text-slate-400">{loading ? "Loading the cached market snapshot…" : "Live data unavailable"}</p></div>
-        {!loading && <Button variant="ghost" onClick={() => void refresh(true)}>Retry</Button>}
-      </div>
-      {error && <WarningBox>{error}</WarningBox>}
-    </Panel>;
-  }
 
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
   return <>

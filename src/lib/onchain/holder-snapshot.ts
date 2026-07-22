@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createPublicClient, http, parseAbiItem, type Address } from "viem";
+import { createPublicClient, http, parseAbiItem, type Address, type Hash } from "viem";
 import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_FIRST_LAUNCH_BLOCK, arcTestnet } from "@/lib/chains";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
@@ -16,7 +16,10 @@ export type FactoryLaunch = {
   token: Address;
   curve: Address;
   creator: Address;
+  name: string;
+  symbol: string;
   launchBlock: bigint;
+  transactionHash: Hash;
 };
 
 export type HolderSnapshot = {
@@ -99,7 +102,10 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
         token,
         curve: log.args.curve as Address,
         creator: log.args.creator as Address,
+        name: log.args.name ?? "Indexed token",
+        symbol: log.args.symbol ?? "TOKEN",
         launchBlock: log.blockNumber ?? 0n,
+        transactionHash: log.transactionHash as Hash,
       });
     }
   }
@@ -134,6 +140,12 @@ export async function getVerifiedFactoryLaunch(tokenAddress: Address, forceRefre
   }
   if (!launch) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
   return { launch, indexedBlock };
+}
+
+export async function getFactoryLaunchIndex(forceRefresh = false) {
+  const indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber());
+  const launches = await getFactoryLaunches(indexedBlock, forceRefresh);
+  return { launches: [...launches.values()], indexedBlock };
 }
 
 function percentOf(part: bigint, total: bigint) {

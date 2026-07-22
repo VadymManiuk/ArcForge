@@ -5,11 +5,10 @@ import { formatUnits, keccak256, parseAbiItem, toHex, type Address, type Hash } 
 import { usePublicClient } from "wagmi";
 import { RevenueChart, type RevenuePoint } from "@/components/revenue-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, StatCard, WarningBox } from "@/components/ui";
-import { ARC_TESTNET_CONTRACTS, arcTestnet } from "@/lib/chains";
+import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_FIRST_LAUNCH_BLOCK, arcTestnet } from "@/lib/chains";
 import { erc20Abi } from "@/lib/contracts";
 import { money } from "@/lib/utils";
 
-const FIRST_PROTOCOL_FEE_BLOCK = 53_061_367n;
 const feeReceivedEvent = parseAbiItem("event FeeReceived(address indexed asset, address indexed payer, bytes32 indexed feeType, uint256 amount)");
 const feeWithdrawnEvent = parseAbiItem("event FeeWithdrawn(address indexed asset, address indexed recipient, uint256 amount)");
 const feeTypes = {
@@ -67,7 +66,7 @@ async function loadFees(client: NonNullable<ReturnType<typeof usePublicClient>>)
     address: ARC_TESTNET_CONTRACTS.feeVault,
     event: feeReceivedEvent,
     args: { asset: ARC_TESTNET_CONTRACTS.usdc },
-    fromBlock: FIRST_PROTOCOL_FEE_BLOCK,
+    fromBlock: ARC_TESTNET_FIRST_LAUNCH_BLOCK,
     toBlock: "latest",
   }));
   await wait(400);
@@ -75,7 +74,7 @@ async function loadFees(client: NonNullable<ReturnType<typeof usePublicClient>>)
     address: ARC_TESTNET_CONTRACTS.feeVault,
     event: feeWithdrawnEvent,
     args: { asset: ARC_TESTNET_CONTRACTS.usdc },
-    fromBlock: FIRST_PROTOCOL_FEE_BLOCK,
+    fromBlock: ARC_TESTNET_FIRST_LAUNCH_BLOCK,
     toBlock: "latest",
   }));
   await wait(400);

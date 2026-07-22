@@ -10,6 +10,7 @@ export const arcTestnet = defineChain({
 });
 
 export const EXPLORER_URL = arcTestnet.blockExplorers.default.url;
+export const ARC_TESTNET_FIRST_LAUNCH_BLOCK = 53_061_367n;
 
 function configuredAddress(value: string | undefined, fallback: Address): Address {
   return value && isAddress(value) ? value : fallback;

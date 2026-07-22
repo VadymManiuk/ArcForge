@@ -211,6 +211,9 @@ export function LaunchForm() {
         throw new Error("The launch succeeded, but its TokenLaunched event was not found.");
       }
       setResult(launched);
+      window.dispatchEvent(new CustomEvent("arcforge:launch-confirmed", {
+        detail: { tokenAddress: launched.token, curveAddress: launched.curve, transactionHash: launchHash },
+      }));
     } catch (launchError) {
       setError(transactionError(launchError));
     } finally {

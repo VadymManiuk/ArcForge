@@ -56,7 +56,7 @@ function rpcMessage(error: unknown) {
     : "Live Arc Testnet data could not be loaded. Retry to read the curve again."
 }
 
-async function loadSnapshot(client: PublicClient, token: TokenData): Promise<OnchainTokenSnapshot> {
+export async function loadOnchainTokenSnapshot(client: PublicClient, token: TokenData): Promise<OnchainTokenSnapshot> {
   if (!token.curveAddress || token.launchBlock === undefined) throw new Error("Missing deployed curve metadata.");
   const curveAddress = token.curveAddress as Address;
   const fromBlock = BigInt(token.launchBlock);
@@ -168,7 +168,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
     setLoading(true);
     setError("");
     try {
-      setSnapshot(await loadSnapshot(client, token));
+      setSnapshot(await loadOnchainTokenSnapshot(client, token));
     } catch (loadError) {
       setError(rpcMessage(loadError));
     } finally {

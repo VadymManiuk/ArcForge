@@ -5,7 +5,7 @@ import { EXPLORER_URL } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 
 export function DemoBanner() {
-  return <div className="border-b border-cyan/15 bg-cyan/[.045] py-1.5 text-center font-mono text-[10px] uppercase tracking-[.14em] text-cyan">Arc Testnet contracts live · launch transactions are onchain · screener data remains simulated until indexing is enabled</div>;
+  return <div className="border-b border-cyan/15 bg-cyan/[.045] py-1.5 text-center font-mono text-[10px] uppercase tracking-[.14em] text-cyan">Arc Testnet contracts live · Factory launches, trades, and fees are indexed onchain · Demo listings remain labeled</div>;
 }
 
 export function Button({ className, variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {

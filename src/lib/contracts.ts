@@ -1,5 +1,17 @@
 export const factoryAbi = [
   {
+    type: "event",
+    name: "TokenLaunched",
+    anonymous: false,
+    inputs: [
+      { name: "token", type: "address", indexed: true },
+      { name: "curve", type: "address", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "name", type: "string", indexed: false },
+      { name: "symbol", type: "string", indexed: false },
+    ],
+  },
+  {
     type: "function",
     name: "launchToken",
     stateMutability: "nonpayable",
@@ -14,6 +26,30 @@ export const factoryAbi = [
       ],
     }],
     outputs: [{ name: "token", type: "address" }, { name: "curve", type: "address" }],
+  },
+] as const;
+
+export const erc20Abi = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
 

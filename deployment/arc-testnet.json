@@ -1,0 +1,15 @@
+{
+  "network": "arc-testnet",
+  "chainId": 5042002,
+  "contracts": {
+    "feeVault": "0x7bfcdA8108Db53B3cCAe02B29C6e5B3905950fB4",
+    "creatorRegistry": "0x07287313ee649efcF22EAEE4361cd6c512219B61",
+    "factory": "0xA4DbA45B199287d3163199A86B4618968d8f8424",
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+  "deployer": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
+  "feeRecipient": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
+  "deployedAt": "2026-07-22T08:55:10.885Z",
+  "explorerBaseUrl": "https://testnet.arcscan.app",
+  "status": "DEPLOYED"
+}

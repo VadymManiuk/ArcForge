@@ -1,12 +1,11 @@
 import Link from "next/link";
 import type { HTMLAttributes, ReactNode } from "react";
 import { ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
-import { EXPLORER_URL, IS_DEMO_MODE } from "@/lib/chains";
+import { EXPLORER_URL } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 
 export function DemoBanner() {
-  if (!IS_DEMO_MODE) return null;
-  return <div className="border-b border-amber-300/15 bg-amber-300/[.06] py-1.5 text-center font-mono text-[10px] uppercase tracking-[.18em] text-amber-200">Demo mode · market data and transactions are simulated · contracts are not deployed</div>;
+  return <div className="border-b border-cyan/15 bg-cyan/[.045] py-1.5 text-center font-mono text-[10px] uppercase tracking-[.14em] text-cyan">Arc Testnet contracts live · launch transactions are onchain · screener data remains simulated until indexing is enabled</div>;
 }
 
 export function Button({ className, variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {

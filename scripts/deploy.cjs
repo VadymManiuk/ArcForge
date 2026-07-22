@@ -45,6 +45,10 @@ async function main() {
   const feeRecipient = process.env.FEE_RECIPIENT;
   if (!feeRecipient) throw new Error("FEE_RECIPIENT is required; refusing to deploy with a placeholder.");
   await validateDeploymentInputs(deployer, usdcAddress, feeRecipient);
+  if (process.env.DEPLOY_PREFLIGHT_ONLY === "true") {
+    console.log("Preflight-only mode complete. No deployment transactions were sent.");
+    return;
+  }
 
   const Vault = await hre.ethers.getContractFactory("ArcForgeFeeVault");
   const vault = await Vault.deploy(deployer.address, feeRecipient);

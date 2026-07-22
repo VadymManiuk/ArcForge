@@ -4,10 +4,10 @@ ArcForge is a USDC-native token launch and discovery layer for Arc. This reposit
 
 ## Current status
 
-- Frontend: functional demo mode with typed mock/indexed data boundaries.
-- Contracts: local source and tests; not audited and not deployed.
+- Frontend: real Arc Testnet approval/launch flow with typed mock/indexed market-data boundaries.
+- Contracts: deployed to Arc Testnet; source is tested but not independently audited.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
-- Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcForge deployment addresses remain unset.
+- Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcForge addresses are recorded in `deployment/arc-testnet.json`.
 
 Demo market data, token addresses, transactions, holder metrics, and revenue figures are clearly labeled in the UI. Nothing in this repository is an audit claim or investment advice.
 
@@ -48,9 +48,10 @@ The deployment script pins and validates Circle's official Arc Testnet USDC cont
 ```bash
 pnpm contracts:test
 pnpm deploy:arc-testnet
+pnpm verify:arc-testnet
 ```
 
-The deployment script refuses placeholders and writes a gitignored local manifest. Contract verification and an independent audit are still required before any mainnet use.
+The deployment script refuses placeholders and writes a gitignored local manifest. The public testnet manifest contains no secrets. Arcscan source verification and an independent audit are still required before any mainnet use.
 
 ## VPS deployment
 
@@ -80,7 +81,7 @@ Run package and OS upgrades deliberately rather than unattended on a production 
 2. Independent smart-contract audit and formal deployment review.
 3. Contract source verification on Arcscan.
 4. Durable event indexer and PostgreSQL persistence.
-5. ERC-20 approval flows and live transaction state in the frontend.
+5. Live buy/sell routing for indexed tokens and resilient transaction-state recovery.
 6. Graduation/migration design, implementation, and tests.
 7. Monitoring, rate limiting, backups, and incident response.
 

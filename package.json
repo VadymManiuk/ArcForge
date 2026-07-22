@@ -11,6 +11,7 @@
     "contracts:compile": "hardhat compile --config hardhat.config.cjs",
     "contracts:test": "hardhat test --config hardhat.config.cjs",
     "deploy:arc-testnet": "hardhat run scripts/deploy.cjs --network arcTestnet --config hardhat.config.cjs",
+    "verify:arc-testnet": "hardhat run scripts/verify-deployment.cjs --network arcTestnet --config hardhat.config.cjs",
     "test": "pnpm contracts:test"
   },
   "dependencies": {

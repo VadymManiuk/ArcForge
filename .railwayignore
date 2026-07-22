@@ -1,0 +1,2 @@
+# Local backup duplicates are not application source files.
+**/* 2.tsx

@@ -16,7 +16,7 @@ const reserveAbi = [
   { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
 
-type Snapshot = {
+export type OnchainTokenSnapshot = {
   price: number;
   priceChange: number;
   marketCap: number;
@@ -56,7 +56,7 @@ function rpcMessage(error: unknown) {
     : "Live Arc Testnet data could not be loaded. Retry to read the curve again."
 }
 
-async function loadSnapshot(client: PublicClient, token: TokenData): Promise<Snapshot> {
+async function loadSnapshot(client: PublicClient, token: TokenData): Promise<OnchainTokenSnapshot> {
   if (!token.curveAddress || token.launchBlock === undefined) throw new Error("Missing deployed curve metadata.");
   const curveAddress = token.curveAddress as Address;
   const fromBlock = BigInt(token.launchBlock);
@@ -157,9 +157,9 @@ async function loadSnapshot(client: PublicClient, token: TokenData): Promise<Sna
   };
 }
 
-export function OnchainTokenDashboard({ token }: { token: TokenData }) {
+export function useOnchainTokenSnapshot(token: TokenData) {
   const client = usePublicClient({ chainId: arcTestnet.id });
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -185,6 +185,12 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
     return () => window.removeEventListener("arcforge:trade-confirmed", handleTrade);
   }, [refresh, token.address]);
+
+  return { snapshot, loading, error, refresh };
+}
+
+export function OnchainTokenDashboard({ token }: { token: TokenData }) {
+  const { snapshot, loading, error, refresh } = useOnchainTokenSnapshot(token);
 
   if (!snapshot) {
     return <Panel className="p-5">

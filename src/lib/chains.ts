@@ -11,6 +11,8 @@ export const arcTestnet = defineChain({
 
 export const EXPLORER_URL = arcTestnet.blockExplorers.default.url;
 export const ARC_TESTNET_FIRST_LAUNCH_BLOCK = 53_061_367n;
+export const ARC_TESTNET_V2_FACTORY_BLOCK = 53_112_263n;
+export const ARC_TESTNET_LEGACY_FACTORY = "0xA4DbA45B199287d3163199A86B4618968d8f8424" as Address;
 
 function configuredAddress(value: string | undefined, fallback: Address): Address {
   return value && isAddress(value) ? value : fallback;
@@ -19,7 +21,7 @@ function configuredAddress(value: string | undefined, fallback: Address): Addres
 export const ARC_TESTNET_CONTRACTS = {
   factory: configuredAddress(
     process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
-    "0xA4DbA45B199287d3163199A86B4618968d8f8424",
+    "0xc5FB127934782D5A147d5EE67Be741EC233036D2",
   ),
   feeVault: configuredAddress(
     process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS,
@@ -34,5 +36,17 @@ export const ARC_TESTNET_CONTRACTS = {
     "0x3600000000000000000000000000000000000000",
   ),
 } as const;
+
+export const ARC_TESTNET_FACTORY_INDEXES = [
+  {
+    address: ARC_TESTNET_CONTRACTS.factory,
+    fromBlock: ARC_TESTNET_CONTRACTS.factory.toLowerCase() === ARC_TESTNET_LEGACY_FACTORY.toLowerCase()
+      ? ARC_TESTNET_FIRST_LAUNCH_BLOCK
+      : ARC_TESTNET_V2_FACTORY_BLOCK,
+  },
+  ...(ARC_TESTNET_CONTRACTS.factory.toLowerCase() === ARC_TESTNET_LEGACY_FACTORY.toLowerCase()
+    ? []
+    : [{ address: ARC_TESTNET_LEGACY_FACTORY, fromBlock: ARC_TESTNET_FIRST_LAUNCH_BLOCK }]),
+] as const;
 
 export const ARC_TESTNET_USDC = ARC_TESTNET_CONTRACTS.usdc;

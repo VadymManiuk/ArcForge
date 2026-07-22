@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createPublicClient, http, parseAbiItem, type Address, type Hash } from "viem";
-import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_FIRST_LAUNCH_BLOCK, arcTestnet } from "@/lib/chains";
+import { ARC_TESTNET_FACTORY_INDEXES, arcTestnet } from "@/lib/chains";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
@@ -88,25 +88,27 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
 
 async function loadFactoryLaunches(indexedBlock: bigint) {
   const launches = new Map<string, FactoryLaunch>();
-  for (let fromBlock = ARC_TESTNET_FIRST_LAUNCH_BLOCK; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
-    const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
-    const logs = await withRpcRetry(() => publicClient.getLogs({
-      address: ARC_TESTNET_CONTRACTS.factory,
-      event: tokenLaunchedEvent,
-      fromBlock,
-      toBlock,
-    }));
-    for (const log of logs) {
-      const token = log.args.token as Address;
-      launches.set(token.toLowerCase(), {
-        token,
-        curve: log.args.curve as Address,
-        creator: log.args.creator as Address,
-        name: log.args.name ?? "Indexed token",
-        symbol: log.args.symbol ?? "TOKEN",
-        launchBlock: log.blockNumber ?? 0n,
-        transactionHash: log.transactionHash as Hash,
-      });
+  for (const factory of ARC_TESTNET_FACTORY_INDEXES) {
+    for (let fromBlock = factory.fromBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+      const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
+      const logs = await withRpcRetry(() => publicClient.getLogs({
+        address: factory.address,
+        event: tokenLaunchedEvent,
+        fromBlock,
+        toBlock,
+      }));
+      for (const log of logs) {
+        const token = log.args.token as Address;
+        launches.set(token.toLowerCase(), {
+          token,
+          curve: log.args.curve as Address,
+          creator: log.args.creator as Address,
+          name: log.args.name ?? "Indexed token",
+          symbol: log.args.symbol ?? "TOKEN",
+          launchBlock: log.blockNumber ?? 0n,
+          transactionHash: log.transactionHash as Hash,
+        });
+      }
     }
   }
   return launches;

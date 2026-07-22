@@ -11,6 +11,7 @@ const FACTORY_CACHE_TTL_MS = 60_000;
 const HOLDER_CACHE_TTL_MS = 45_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const MAX_TOKEN_CACHES = 50;
+const RPC_REQUEST_GAP_MS = 220;
 
 export type FactoryLaunch = {
   token: Address;
@@ -84,7 +85,7 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
       return await operation();
     } catch (error) {
       if (!isRetryableRpcError(error) || attempt === attempts) throw error;
-      await wait(attempt * 750);
+      await wait(attempt * 1_500);
     }
   }
   throw new Error("Arc RPC request failed after retries.");
@@ -101,6 +102,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
         fromBlock,
         toBlock,
       }));
+      await wait(RPC_REQUEST_GAP_MS);
       for (const log of logs) {
         const token = log.args.token as Address;
         launches.set(token.toLowerCase(), {
@@ -123,7 +125,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
       const block = await withRpcRetry(() => publicClient.getBlock({ blockNumber: launch.launchBlock }));
       launchedAt = Number(block.timestamp);
       state.factoryBlockTimestamps.set(blockKey, launchedAt);
-      await wait(80);
+      await wait(RPC_REQUEST_GAP_MS);
     }
     launch.launchedAt = launchedAt;
   }
@@ -184,6 +186,7 @@ async function loadHolderSnapshot(tokenAddress: Address): Promise<HolderSnapshot
       fromBlock,
       toBlock,
     }));
+    await wait(RPC_REQUEST_GAP_MS);
     for (const log of logs) {
       const from = (log.args.from ?? ZERO_ADDRESS).toLowerCase();
       const to = (log.args.to ?? ZERO_ADDRESS).toLowerCase();

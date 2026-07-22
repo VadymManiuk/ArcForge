@@ -23,6 +23,7 @@ const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const MAX_TOKEN_CACHES = 50;
 const MAX_BLOCK_TIMESTAMPS = 1_000;
+const RPC_REQUEST_GAP_MS = 180;
 
 export type MarketSnapshot = {
   price: number;
@@ -94,7 +95,7 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
       return await operation();
     } catch (error) {
       if (!isRetryableRpcError(error) || attempt === attempts) throw error;
-      await wait(attempt * 750);
+      await wait(attempt * 1_500);
     }
   }
   throw new Error("Arc RPC request failed after retries.");
@@ -121,7 +122,7 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
       const oldestKey = state.blockTimestamps.keys().next().value as string | undefined;
       if (oldestKey) state.blockTimestamps.delete(oldestKey);
     }
-    await wait(80);
+    await wait(RPC_REQUEST_GAP_MS);
   }
   return timestamps;
 }
@@ -147,6 +148,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
       fromBlock,
       toBlock,
     }));
+    await wait(RPC_REQUEST_GAP_MS);
     for (const log of logs) {
       events.push(log.eventName === "TokenBought" ? {
         blockNumber: log.blockNumber ?? 0n,

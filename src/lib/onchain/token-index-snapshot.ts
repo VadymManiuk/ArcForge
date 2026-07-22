@@ -19,6 +19,7 @@ const curveConfigAbi = [
 ] as const;
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
+const RPC_REQUEST_GAP_MS = 220;
 
 type TokenIndexSnapshot = {
   tokens: TokenData[];
@@ -68,7 +69,7 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
       return await operation();
     } catch (error) {
       if (!isRetryableRpcError(error) || attempt === attempts) throw error;
-      await wait(attempt * 750);
+      await wait(attempt * 1_500);
     }
   }
   throw new Error("Arc RPC request failed after retries.");
@@ -117,13 +118,15 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     return token;
   }
 
-  const [totalSupplyRaw, metadataURI, initialReserveRaw, virtualUsdcRaw, graduationRaw] = await Promise.all([
-    withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" })),
-    withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" })),
-    withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "initialTokenReserve" })),
-    withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "virtualUsdcReserve" })),
-    withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "graduationThreshold" })),
-  ]);
+  const totalSupplyRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" }));
+  await wait(RPC_REQUEST_GAP_MS);
+  const metadataURI = await withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" }));
+  await wait(RPC_REQUEST_GAP_MS);
+  const initialReserveRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "initialTokenReserve" }));
+  await wait(RPC_REQUEST_GAP_MS);
+  const virtualUsdcRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "virtualUsdcReserve" }));
+  await wait(RPC_REQUEST_GAP_MS);
+  const graduationRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "graduationThreshold" }));
   const metadata = await resolveTokenMetadata(metadataURI);
   const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
   const initialReserve = Number(formatUnits(initialReserveRaw, 18));

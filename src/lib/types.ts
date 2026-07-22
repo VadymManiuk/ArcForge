@@ -42,6 +42,9 @@ export type TokenData = {
   source?: "onchain" | "demo";
   creatorAllocationPercent?: number;
   launchTxHash?: string;
+  launchBlock?: number;
+  totalSupply?: number;
+  virtualUsdcReserve?: number;
   creator: string;
   icon: string;
   description: string;

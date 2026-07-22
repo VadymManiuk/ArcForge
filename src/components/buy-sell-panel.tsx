@@ -176,6 +176,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       setTransactionHash(tradeHash);
       setNotice(`${side} confirmed on Arc Testnet.`);
       setQuote(null);
+      window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
+        detail: { tokenAddress: token.address, transactionHash: tradeHash },
+      }));
     } catch (error) {
       setNotice(transactionError(error));
     } finally {

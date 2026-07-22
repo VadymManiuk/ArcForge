@@ -13,6 +13,8 @@ const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, 
 const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
 const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
 const EVENT_BLOCK_CHUNK = 10_000n;
+const CHART_TRADE_LIMIT = 240;
+const blockTimestampCache = new Map<string, number>();
 const reserveAbi = [
   { type: "function", name: "tokenReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
@@ -58,6 +60,24 @@ function rpcMessage(error: unknown) {
     : "Live Arc Testnet data could not be loaded. Retry to read the curve again."
 }
 
+async function loadBlockTimestamps(client: PublicClient, blockNumbers: bigint[]) {
+  const timestamps = new Map<string, number>();
+  const uniqueBlocks = [...new Set(blockNumbers.map((blockNumber) => blockNumber.toString()))];
+  for (const blockKey of uniqueBlocks) {
+    const cached = blockTimestampCache.get(blockKey);
+    if (cached !== undefined) {
+      timestamps.set(blockKey, cached);
+      continue;
+    }
+    const block = await readWithRetry(() => client.getBlock({ blockNumber: BigInt(blockKey) }));
+    const timestamp = Number(block.timestamp);
+    blockTimestampCache.set(blockKey, timestamp);
+    timestamps.set(blockKey, timestamp);
+    await wait(80);
+  }
+  return timestamps;
+}
+
 export async function loadOnchainTokenSnapshot(client: PublicClient, token: TokenData): Promise<OnchainTokenSnapshot> {
   if (!token.curveAddress || token.launchBlock === undefined) throw new Error("Missing deployed curve metadata.");
   const curveAddress = token.curveAddress as Address;
@@ -79,7 +99,9 @@ export async function loadOnchainTokenSnapshot(client: PublicClient, token: Toke
     functionName: "usdcReserve",
   }));
   await wait(350);
-  const latestBlock = await readWithRetry(() => client.getBlockNumber());
+  const latestBlockData = await readWithRetry(() => client.getBlock({ blockTag: "latest" }));
+  const latestBlock = latestBlockData.number;
+  blockTimestampCache.set(latestBlock.toString(), Number(latestBlockData.timestamp));
   const tradeLogs: GetLogsReturnType<undefined, typeof tradeEvents> = [];
   for (let chunkStart = fromBlock; chunkStart <= latestBlock; chunkStart += EVENT_BLOCK_CHUNK) {
     const chunkEnd = chunkStart + EVENT_BLOCK_CHUNK - 1n;
@@ -122,6 +144,12 @@ export async function loadOnchainTokenSnapshot(client: PublicClient, token: Toke
     ? left.logIndex - right.logIndex
     : left.blockNumber < right.blockNumber ? -1 : 1);
 
+  const chartEvents = events.slice(-CHART_TRADE_LIMIT);
+  const blockTimestamps = await loadBlockTimestamps(client, [
+    fromBlock,
+    ...chartEvents.map((event) => event.blockNumber),
+  ]);
+
   const trades: Trade[] = events.slice().reverse().map((event) => ({
     time: `Block ${event.blockNumber.toString()}`,
     type: event.type,
@@ -132,13 +160,14 @@ export async function loadOnchainTokenSnapshot(client: PublicClient, token: Toke
     txHash: event.hash,
   }));
   const chart: ChartPoint[] = [
-    { time: "Launch", price: launchPrice, volume: 0 },
-    ...events.map((event) => ({
+    { time: "Launch", timestamp: blockTimestamps.get(fromBlock.toString()), price: launchPrice, volume: 0 },
+    ...chartEvents.map((event) => ({
       time: `#${(event.blockNumber % 100_000n).toString()}`,
+      timestamp: blockTimestamps.get(event.blockNumber.toString()),
       price: event.notional / event.tokens,
       volume: event.notional,
     })),
-    { time: "Now", price, volume: 0 },
+    { time: "Now", timestamp: Number(latestBlockData.timestamp), price, volume: 0 },
   ];
 
   return {

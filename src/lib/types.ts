@@ -14,7 +14,13 @@ export type RiskLabel =
   | "high_risk";
 
 export type TokenStatus = "Live on curve" | "Graduating soon" | "Graduated" | "Flagged";
-export type ChartPoint = { time: string; price: number; volume: number };
+export type ChartPoint = {
+  time: string;
+  price: number;
+  volume: number;
+  /** Unix timestamp from Arc Testnet when available. Demo listings omit it. */
+  timestamp?: number;
+};
 export type Trade = {
   time: string;
   type: "Buy" | "Sell";

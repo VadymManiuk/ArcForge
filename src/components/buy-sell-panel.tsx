@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Settings2 } from "lucide-react";
 import {
   formatUnits,
@@ -25,6 +25,8 @@ import { ArcscanLink, Badge, Button, WarningBox } from "./ui";
 type Side = "Buy" | "Sell";
 type LiveQuote = { input: bigint; output: bigint; fee: bigint; minimumOutput: bigint };
 type TransactionStatus = "idle" | "quoting" | "preparing" | "approving" | "trading";
+type WalletBalances = { usdc: bigint; token: bigint };
+const percentageOptions = [10, 25, 50, 75, 100] as const;
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -63,6 +65,12 @@ function displayUnits(value: bigint, decimals: number) {
     : "—";
 }
 
+function inputUnits(value: bigint, decimals: number) {
+  const formatted = formatUnits(value, decimals);
+  const trimmed = formatted.includes(".") ? formatted.replace(/\.?0+$/, "") : formatted;
+  return trimmed || "0";
+}
+
 export function BuySellPanel({ token }: { token: TokenData }) {
   if (token.source === "onchain" && token.curveAddress) {
     return <LiveBuySellPanel token={token} curveAddress={token.curveAddress as Address} />;
@@ -78,7 +86,10 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [notice, setNotice] = useState("");
   const [transactionHash, setTransactionHash] = useState<Hash | null>(null);
+  const [balances, setBalances] = useState<WalletBalances | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
   const submissionLockRef = useRef(false);
+  const balanceRequestRef = useRef(0);
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
   const { data: walletClient } = useWalletClient();
@@ -90,12 +101,55 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const outputSymbol = side === "Buy" ? token.ticker : "USDC";
   const isPending = status !== "idle";
   const tradingDisabled = token.status === "Graduated";
+  const activeBalance = side === "Buy" ? balances?.usdc : balances?.token;
+
+  const refreshBalances = useCallback(async () => {
+    const requestId = ++balanceRequestRef.current;
+    if (!address || chainId !== arcTestnet.id) {
+      setBalances(null);
+      setBalanceLoading(false);
+      return;
+    }
+    const client = walletClient?.extend(publicActions) ?? publicClient;
+    if (!client) return;
+    setBalanceLoading(true);
+    try {
+      const usdc = await withRpcRetry(() => client.readContract({
+        address: ARC_TESTNET_CONTRACTS.usdc,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      }));
+      await wait(180);
+      const tokenBalance = await withRpcRetry(() => client.readContract({
+        address: token.address as Address,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      }));
+      if (balanceRequestRef.current === requestId) setBalances({ usdc, token: tokenBalance });
+    } catch {
+      if (balanceRequestRef.current === requestId) setBalances(null);
+    } finally {
+      if (balanceRequestRef.current === requestId) setBalanceLoading(false);
+    }
+  }, [address, chainId, publicClient, token.address, walletClient]);
 
   useEffect(() => {
     setQuote(null);
     setTransactionHash(null);
     setNotice("");
   }, [amount, side, slippage]);
+
+  useEffect(() => {
+    void refreshBalances();
+  }, [refreshBalances]);
+
+  function selectBalancePercent(percent: (typeof percentageOptions)[number]) {
+    if (activeBalance === undefined) return;
+    const selected = activeBalance * BigInt(percent) / 100n;
+    setAmount(inputUnits(selected, inputDecimals));
+  }
 
   async function getClient() {
     if (!isConnected || !address) throw new Error("Connect Rabby before requesting an onchain quote.");
@@ -183,6 +237,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       setTransactionHash(tradeHash);
       setNotice(`${side} confirmed on Arc Testnet.`);
       setQuote(null);
+      await refreshBalances();
       window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
         detail: { tokenAddress: token.address, transactionHash: tradeHash },
       }));
@@ -198,17 +253,40 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     ? "Reading curve…"
     : status === "preparing"
       ? "Preparing transaction…"
-    : status === "approving"
-      ? `Approving ${inputSymbol}…`
-      : status === "trading"
-        ? `${side} pending…`
-        : tradingDisabled
-          ? "Trading closed at graduation"
-          : quote
-          ? `${side} ${token.ticker}`
-          : "Get onchain quote";
+      : status === "approving"
+        ? `Approving ${inputSymbol}…`
+        : status === "trading"
+          ? `${side} pending…`
+          : tradingDisabled
+            ? "Trading closed at graduation"
+            : quote
+              ? `${side} ${token.ticker}`
+              : "Get onchain quote";
 
-  return <div className="panel p-4"><div className="mb-3 flex items-center justify-between"><Badge tone="good">Live onchain</Badge><span className="font-mono text-[9px] text-slate-600">Arc Testnet</span></div><div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div><div className="mt-5 flex items-center justify-between"><label className="label mb-0">You pay</label><button onClick={() => setSlippage(slippage === 1 ? 0.5 : 1)} className="flex items-center gap-1 text-[10px] text-slate-500"><Settings2 className="size-3" />{slippage}% slippage</button></div><div className="mt-2 flex items-center rounded-xl border border-line bg-[#080c13] px-3 focus-within:border-cyan/50"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none" /><Badge tone="neutral">{inputSymbol}</Badge></div><div className="relative my-3 flex justify-center"><span className="grid size-7 place-items-center rounded-full border border-line bg-panel text-slate-500"><ArrowDown className="size-3" /></span></div><label className="label">Expected output</label><div className="flex h-14 items-center justify-between rounded-xl border border-line bg-[#080c13] px-3"><span className="text-xl font-semibold text-white">{quote ? displayUnits(quote.output, outputDecimals) : "—"}</span><Badge tone="cyan">{outputSymbol}</Badge></div><dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.fee, 6)} USDC` : "1.00%"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div></dl><Button className="w-full" disabled={isPending || tradingDisabled} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>{notice && <p className={`mt-3 rounded-lg p-2 text-[11px] leading-4 ${transactionHash ? "bg-emerald-400/[.07] text-emerald-300" : "bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}<div className="mt-4"><WarningBox>{tradingDisabled ? "This deployed curve closes trading at graduation; migration is not enabled." : `Quotes and trades use the deployed ${token.ticker} bonding curve. Rabby may request an exact-token approval before the trade transaction.`}</WarningBox></div></div>;
+  const balanceLabel = !address
+    ? "Connect wallet"
+    : chainId !== arcTestnet.id
+      ? "Switch to Arc Testnet"
+      : balanceLoading
+        ? "Reading balance…"
+        : activeBalance === undefined
+          ? "Balance unavailable"
+          : `Balance ${displayUnits(activeBalance, inputDecimals)} ${inputSymbol}`;
+
+  return <div className="panel p-4">
+    <div className="mb-3 flex items-center justify-between"><Badge tone="good">Live onchain</Badge><span className="font-mono text-[9px] text-slate-600">Arc Testnet</span></div>
+    <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
+    <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0">You pay</label><div className="flex items-center gap-3"><span className="max-w-[170px] truncate text-[10px] text-slate-500" title={balanceLabel}>{balanceLabel}</span><button disabled={isPending} onClick={() => setSlippage(slippage === 1 ? 0.5 : 1)} className="flex items-center gap-1 text-[10px] text-slate-500 disabled:opacity-50"><Settings2 className="size-3" />{slippage}%</button></div></div>
+    <div className="mt-2 flex items-center rounded-xl border border-line bg-[#080c13] px-3 focus-within:border-cyan/50"><input inputMode="decimal" value={amount} disabled={isPending} onChange={(event) => setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none disabled:opacity-50" /><Badge tone="neutral">{inputSymbol}</Badge></div>
+    <div className="mt-2 grid grid-cols-5 gap-1">{percentageOptions.map((percent) => <button key={percent} type="button" disabled={isPending || activeBalance === undefined || activeBalance === 0n} onClick={() => selectBalancePercent(percent)} className="h-8 rounded-lg border border-line bg-black/15 font-mono text-[10px] text-slate-400 transition hover:border-cyan/35 hover:text-cyan disabled:cursor-not-allowed disabled:opacity-35">{percent}%</button>)}</div>
+    <div className="relative my-3 flex justify-center"><span className="grid size-7 place-items-center rounded-full border border-line bg-panel text-slate-500"><ArrowDown className="size-3" /></span></div>
+    <label className="label">Expected output</label>
+    <div className="flex h-14 items-center justify-between rounded-xl border border-line bg-[#080c13] px-3"><span className="text-xl font-semibold text-white">{quote ? displayUnits(quote.output, outputDecimals) : "—"}</span><Badge tone="cyan">{outputSymbol}</Badge></div>
+    <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.fee, 6)} USDC` : "1.00%"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div></dl>
+    <Button className="w-full" disabled={isPending || tradingDisabled} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
+    {notice && <p className={`mt-3 rounded-lg p-2 text-[11px] leading-4 ${transactionHash ? "bg-emerald-400/[.07] text-emerald-300" : "bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
+    <div className="mt-4"><WarningBox>{tradingDisabled ? "This deployed curve closes trading at graduation; migration is not enabled." : `Quotes and trades use the deployed ${token.ticker} bonding curve. Rabby may request an exact-token approval before the trade transaction.`}</WarningBox></div>
+  </div>;
 }
 
 function DemoBuySellPanel({ token }: { token: TokenData }) {

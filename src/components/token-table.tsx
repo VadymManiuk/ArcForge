@@ -81,7 +81,7 @@ export function TokenTable({
             <td className="font-mono text-[10px] text-slate-400">{awaitingLive ? "Reading Arc RPC…" : token.source === "onchain" ? <><span className="text-emerald-300">Onchain total</span> · {money(token.volume24h, true)}</> : <>{money(token.volume5m, true)} / {money(token.volume1h, true)} / <span className="text-slate-200">{money(token.volume24h, true)}</span></>}</td>
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><span className="text-emerald-400">{token.buyers}</span><span className="mx-1 text-slate-700">/</span><span className="text-rose-400">{token.sellers}</span></>}</td>
             <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>
-            <td className="text-slate-400">{token.source === "onchain" ? "2+" : number(token.holders)}</td>
+            <td className="text-slate-400">{token.source === "onchain" && token.holders === 0 ? "—" : number(token.holders)}</td>
             <td className="pr-5"><div className="mb-1.5 flex justify-between text-[10px] text-slate-500"><span>{awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></td>
             <td><RiskBadge score={token.riskScore}/></td>
             <td><Badge tone={token.status === "Flagged" ? "bad" : token.status === "Graduated" ? "good" : token.status === "Graduating soon" ? "warn" : "cyan"}>{token.status}</Badge></td>

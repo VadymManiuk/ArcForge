@@ -1,236 +1,53 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { formatUnits, parseAbiItem, publicActions, type Address, type GetLogsReturnType, type Hash, type PublicClient } from "viem";
-import { usePublicClient, useWalletClient } from "wagmi";
 import { TokenChart } from "@/components/token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, StatCard, WarningBox } from "@/components/ui";
-import { arcTestnet } from "@/lib/chains";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
-import type { ChartPoint, TokenData, Trade } from "@/lib/types";
+import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
+import type { TokenData } from "@/lib/types";
 import { money, number } from "@/lib/utils";
 
-const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)");
-const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
-const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
-const EVENT_BLOCK_CHUNK = 10_000n;
-const CHART_TRADE_LIMIT = 240;
-const blockTimestampCache = new Map<string, number>();
-const reserveAbi = [
-  { type: "function", name: "tokenReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-] as const;
-
-export type OnchainTokenSnapshot = {
-  price: number;
-  priceChange: number;
-  marketCap: number;
-  volume: number;
-  buyers: number;
-  sellers: number;
-  raisedUsdc: number;
-  progress: number;
-  tokensSold: number;
-  tokenReserve: number;
-  chart: ChartPoint[];
-  trades: Trade[];
-};
-
-function wait(milliseconds: number) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function readWithRetry<T>(operation: () => Promise<T>, attempts = 4): Promise<T> {
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const retryable = /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|request limit|\b429\b/i.test(message);
-      if (!retryable || attempt === attempts) throw error;
-      await wait(attempt * 700);
-    }
-  }
-  throw new Error("Arc RPC request failed after retries.");
-}
-
-function rpcMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /rate limit|request limit|Too Many Requests|\b429\b|RPC Request failed|HTTP request failed/i.test(message)
-    ? "Arc Testnet RPC is rate-limited. Live values were not replaced with simulated data; retry in a moment."
-    : "Live Arc Testnet data could not be loaded. Retry to read the curve again."
-}
-
-async function loadBlockTimestamps(client: PublicClient, blockNumbers: bigint[]) {
-  const timestamps = new Map<string, number>();
-  const uniqueBlocks = [...new Set(blockNumbers.map((blockNumber) => blockNumber.toString()))];
-  for (const blockKey of uniqueBlocks) {
-    const cached = blockTimestampCache.get(blockKey);
-    if (cached !== undefined) {
-      timestamps.set(blockKey, cached);
-      continue;
-    }
-    const block = await readWithRetry(() => client.getBlock({ blockNumber: BigInt(blockKey) }));
-    const timestamp = Number(block.timestamp);
-    blockTimestampCache.set(blockKey, timestamp);
-    timestamps.set(blockKey, timestamp);
-    await wait(80);
-  }
-  return timestamps;
-}
-
-export async function loadOnchainTokenSnapshot(client: PublicClient, token: TokenData): Promise<OnchainTokenSnapshot> {
-  if (!token.curveAddress || token.launchBlock === undefined) throw new Error("Missing deployed curve metadata.");
-  const curveAddress = token.curveAddress as Address;
-  const fromBlock = BigInt(token.launchBlock);
-  const creatorAllocation = token.creatorAllocationPercent ?? 0;
-  const totalSupply = token.totalSupply ?? 1_000_000_000;
-  const initialReserve = totalSupply * (100 - creatorAllocation) / 100;
-  const virtualUsdc = token.virtualUsdcReserve ?? 10_000;
-
-  const tokenReserveRaw = await readWithRetry(() => client.readContract({
-    address: curveAddress,
-    abi: reserveAbi,
-    functionName: "tokenReserve",
-  }));
-  await wait(350);
-  const usdcReserveRaw = await readWithRetry(() => client.readContract({
-    address: curveAddress,
-    abi: reserveAbi,
-    functionName: "usdcReserve",
-  }));
-  await wait(350);
-  const latestBlockData = await readWithRetry(() => client.getBlock({ blockTag: "latest" }));
-  const latestBlock = latestBlockData.number;
-  blockTimestampCache.set(latestBlock.toString(), Number(latestBlockData.timestamp));
-  const tradeLogs: GetLogsReturnType<undefined, typeof tradeEvents> = [];
-  for (let chunkStart = fromBlock; chunkStart <= latestBlock; chunkStart += EVENT_BLOCK_CHUNK) {
-    const chunkEnd = chunkStart + EVENT_BLOCK_CHUNK - 1n;
-    const toBlock = chunkEnd < latestBlock ? chunkEnd : latestBlock;
-    const chunk = await readWithRetry(() => client.getLogs({
-      address: curveAddress,
-      events: tradeEvents,
-      fromBlock: chunkStart,
-      toBlock,
-    }));
-    tradeLogs.push(...chunk);
-    if (toBlock < latestBlock) await wait(150);
-  }
-
-  const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
-  const raisedUsdc = Number(formatUnits(usdcReserveRaw, 6));
-  const price = (virtualUsdc + raisedUsdc) / tokenReserve;
-  const launchPrice = virtualUsdc / initialReserve;
-  const progress = raisedUsdc / token.targetUSDC * 100;
-
-  const events = tradeLogs.map((log) => log.eventName === "TokenBought" ? {
-    blockNumber: log.blockNumber ?? 0n,
-    logIndex: log.logIndex ?? 0,
-    hash: log.transactionHash as Hash,
-    wallet: log.args.buyer as Address,
-    type: "Buy" as const,
-    usdc: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
-    notional: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
-    tokens: Number(formatUnits(log.args.tokensOut ?? 0n, 18)),
-  } : {
-    blockNumber: log.blockNumber ?? 0n,
-    logIndex: log.logIndex ?? 0,
-    hash: log.transactionHash as Hash,
-    wallet: log.args.seller as Address,
-    type: "Sell" as const,
-    usdc: Number(formatUnits(log.args.usdcOut ?? 0n, 6)),
-    notional: Number(formatUnits((log.args.usdcOut ?? 0n) + (log.args.fee ?? 0n), 6)),
-    tokens: Number(formatUnits(log.args.tokensIn ?? 0n, 18)),
-  }).sort((left, right) => left.blockNumber === right.blockNumber
-    ? left.logIndex - right.logIndex
-    : left.blockNumber < right.blockNumber ? -1 : 1);
-
-  const chartEvents = events.slice(-CHART_TRADE_LIMIT);
-  const blockTimestamps = await loadBlockTimestamps(client, [
-    fromBlock,
-    ...chartEvents.map((event) => event.blockNumber),
-  ]);
-
-  const trades: Trade[] = events.slice().reverse().map((event) => ({
-    time: `Block ${event.blockNumber.toString()}`,
-    type: event.type,
-    wallet: event.wallet,
-    usdc: event.usdc,
-    tokens: event.tokens,
-    price: event.notional / event.tokens,
-    txHash: event.hash,
-  }));
-  const chart: ChartPoint[] = [
-    { time: "Launch", timestamp: blockTimestamps.get(fromBlock.toString()), price: launchPrice, volume: 0 },
-    ...chartEvents.map((event) => ({
-      time: `#${(event.blockNumber % 100_000n).toString()}`,
-      timestamp: blockTimestamps.get(event.blockNumber.toString()),
-      price: event.notional / event.tokens,
-      volume: event.notional,
-    })),
-    { time: "Now", timestamp: Number(latestBlockData.timestamp), price, volume: 0 },
-  ];
-
-  return {
-    price,
-    priceChange: (price / launchPrice - 1) * 100,
-    marketCap: price * totalSupply,
-    volume: events.reduce((sum, event) => sum + event.notional, 0),
-    buyers: tradeLogs.filter((log) => log.eventName === "TokenBought").length,
-    sellers: tradeLogs.filter((log) => log.eventName === "TokenSold").length,
-    raisedUsdc,
-    progress,
-    tokensSold: initialReserve - tokenReserve,
-    tokenReserve,
-    chart,
-    trades,
-  };
-}
+export type OnchainTokenSnapshot = MarketSnapshot;
 
 export function useOnchainTokenSnapshot(token: TokenData) {
-  const publicClient = usePublicClient({ chainId: arcTestnet.id });
-  const { data: walletClient } = useWalletClient();
   const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [stale, setStale] = useState(false);
 
-  const refresh = useCallback(async () => {
-    const walletReadClient = walletClient?.chain.id === arcTestnet.id
-      ? walletClient.extend(publicActions) as unknown as PublicClient
-      : null;
-    const clients = [walletReadClient, publicClient].filter((client): client is PublicClient => Boolean(client));
-    if (clients.length === 0) return;
+  const refresh = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError("");
-    let lastError: unknown;
-    for (const client of clients) {
-      try {
-        setSnapshot(await loadOnchainTokenSnapshot(client, token));
-        setLoading(false);
-        return;
-      } catch (loadError) {
-        lastError = loadError;
-      }
+    try {
+      const response = await fetch(`/api/onchain/tokens/${token.address}/market${forceRefresh ? "?refresh=1" : ""}`);
+      const payload = await response.json() as { snapshot?: OnchainTokenSnapshot; stale?: boolean; error?: string };
+      if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Market data is unavailable.");
+      setSnapshot(payload.snapshot);
+      setStale(Boolean(payload.stale));
+      if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Live market data could not be loaded.");
+    } finally {
+      setLoading(false);
     }
-    setError(rpcMessage(lastError));
-    setLoading(false);
-  }, [publicClient, token, walletClient]);
+  }, [token.address]);
 
   useEffect(() => {
     void refresh();
     const handleTrade = (event: Event) => {
       const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
-      if (detail?.tokenAddress?.toLowerCase() === token.address.toLowerCase()) void refresh();
+      if (detail?.tokenAddress?.toLowerCase() === token.address.toLowerCase()) void refresh(true);
     };
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
     return () => window.removeEventListener("arcforge:trade-confirmed", handleTrade);
   }, [refresh, token.address]);
 
-  return { snapshot, loading, error, refresh };
+  return { snapshot, loading, error, stale, refresh };
 }
 
 export function OnchainTokenDashboard({ token }: { token: TokenData }) {
-  const { snapshot, loading, error, refresh } = useOnchainTokenSnapshot(token);
+  const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token);
   const [holderSnapshot, setHolderSnapshot] = useState<HolderSnapshot | null>(null);
   const [holderLoading, setHolderLoading] = useState(true);
   const [holderError, setHolderError] = useState("");
@@ -265,8 +82,8 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
   if (!snapshot) {
     return <Panel className="p-5">
       <div className="flex items-center justify-between gap-4">
-        <div><p className="eyebrow">Onchain market data</p><p className="mt-2 text-sm text-slate-400">{loading ? "Reading Arc Testnet reserves and events…" : "Live data unavailable"}</p></div>
-        {!loading && <Button variant="ghost" onClick={() => void refresh()}>Retry</Button>}
+        <div><p className="eyebrow">Onchain market data</p><p className="mt-2 text-sm text-slate-400">{loading ? "Loading the cached market snapshot…" : "Live data unavailable"}</p></div>
+        {!loading && <Button variant="ghost" onClick={() => void refresh(true)}>Retry</Button>}
       </div>
       {error && <WarningBox>{error}</WarningBox>}
     </Panel>;
@@ -275,7 +92,7 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
   return <>
     <Panel className="p-5">
-      <div className="mb-3 flex justify-end"><Badge tone={loading ? "neutral" : "good"}>{loading ? "Updating…" : "Live Arc RPC"}</Badge></div>
+      <div className="mb-3 flex justify-end gap-2"><Badge tone="neutral">Block {snapshot.indexedBlock}</Badge><Badge tone={loading || stale ? "neutral" : "good"}>{loading ? "Updating…" : stale ? "Last confirmed" : "Live indexed"}</Badge></div>
       <TokenChart data={snapshot.chart}/>
       {error && <WarningBox>{error}</WarningBox>}
     </Panel>
@@ -296,7 +113,7 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
       <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-4"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Curve inventory" value={number(snapshot.tokenReserve)}/><Metric label="Buys / sells" value={`${snapshot.buyers} / ${snapshot.sellers}`}/><Metric label="Migration" value="Not enabled"/></div>
     </Panel>
     <Panel className="overflow-hidden">
-      <div className="flex items-center justify-between border-b border-line p-5"><div><p className="eyebrow">Event activity</p><h2 className="mt-2 text-lg font-semibold">Recent onchain trades</h2></div><Button variant="ghost" disabled={loading} onClick={() => void refresh()}>Refresh</Button></div>
+      <div className="flex items-center justify-between border-b border-line p-5"><div><p className="eyebrow">Event activity</p><h2 className="mt-2 text-lg font-semibold">Recent onchain trades</h2></div><Button variant="ghost" disabled={loading} onClick={() => void refresh(true)}>Refresh</Button></div>
       <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-5 py-3">Block</th><th>Type</th><th>Wallet</th><th>USDC</th><th>Tokens</th><th>Price</th><th>Transaction</th></tr></thead><tbody>{snapshot.trades.map((trade) => <tr key={trade.txHash} className="border-b border-line/60 last:border-0"><td className="px-5 py-3 text-slate-500">{trade.time}</td><td><Badge tone={trade.type === "Buy" ? "good" : "bad"}>{trade.type}</Badge></td><td><AddressPill address={trade.wallet}/></td><td className="text-slate-300">{money(trade.usdc)}</td><td className="text-slate-300">{number(trade.tokens)}</td><td className="text-slate-400">{money(trade.price)}</td><td><ArcscanLink hash={trade.txHash}/></td></tr>)}{snapshot.trades.length === 0 && <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">No TokenBought or TokenSold events found.</td></tr>}</tbody></table></div>
     </Panel>
   </>;

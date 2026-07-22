@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, isAddress, parseAbiItem, publicActions, type Address, type GetLogsReturnType, type Hash, type PublicClient } from "viem";
 import { usePublicClient, useWalletClient } from "wagmi";
-import { loadOnchainTokenSnapshot, type OnchainTokenSnapshot } from "@/components/onchain-token-dashboard";
 import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_FIRST_LAUNCH_BLOCK, arcTestnet } from "@/lib/chains";
 import { genesisToken } from "@/lib/mock-data";
+import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
+import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
 import type { CreatorProfile, TokenData } from "@/lib/types";
 
@@ -91,7 +92,7 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 4): Promi
   throw new Error("Arc RPC request failed after retries.");
 }
 
-function applySnapshot(token: TokenData, snapshot: OnchainTokenSnapshot): TokenData {
+function applySnapshot(token: TokenData, snapshot: MarketSnapshot, holderSnapshot: HolderSnapshot | null): TokenData {
   return {
     ...token,
     price: snapshot.price,
@@ -104,7 +105,7 @@ function applySnapshot(token: TokenData, snapshot: OnchainTokenSnapshot): TokenD
     buyers: snapshot.buyers,
     sellers: snapshot.sellers,
     trades: snapshot.trades.length,
-    holders: 2,
+    holders: holderSnapshot?.holders ?? 0,
     curveProgress: snapshot.progress,
     status: snapshot.progress >= 100 ? "Graduated" : snapshot.progress >= 75 ? "Graduating soon" : "Live on curve",
     chartData: snapshot.chart,
@@ -144,6 +145,7 @@ async function hydrateLaunch(
       creator: launch.creator,
       launchBlock: Number(launch.blockNumber),
       launchTxHash: launch.transactionHash,
+      holders: 0,
       creatorProfile: { ...genesisToken.creatorProfile, launches: creatorLaunches },
     };
     return base;
@@ -225,7 +227,7 @@ async function hydrateLaunch(
     buyers: 0,
     sellers: 0,
     trades: 0,
-    holders: 2,
+    holders: 0,
     curveProgress: 0,
     riskScore: risk.score,
     status: "Live on curve",
@@ -236,6 +238,13 @@ async function hydrateLaunch(
     socials: {},
   };
   return base;
+}
+
+async function loadServerSnapshot<T>(path: string): Promise<T> {
+  const response = await fetch(path);
+  const payload = await response.json() as { snapshot?: T; error?: string };
+  if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Onchain snapshot is unavailable.");
+  return payload.snapshot;
 }
 
 async function loadFactoryTokens(client: PublicClient, includeMarketData: boolean) {
@@ -281,7 +290,14 @@ async function loadFactoryTokens(client: PublicClient, includeMarketData: boolea
       tokens.push(base);
     } else {
       try {
-        tokens.push(applySnapshot(base, await loadOnchainTokenSnapshot(client, base)));
+        const marketSnapshot = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market`);
+        let holderSnapshot: HolderSnapshot | null = null;
+        try {
+          holderSnapshot = await loadServerSnapshot<HolderSnapshot>(`/api/onchain/tokens/${base.address}/holders`);
+        } catch {
+          holderSnapshot = null;
+        }
+        tokens.push(applySnapshot(base, marketSnapshot, holderSnapshot));
       } catch (loadError) {
         marketDataError ??= loadError;
         tokens.push(base);

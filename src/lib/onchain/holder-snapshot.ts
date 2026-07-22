@@ -12,7 +12,7 @@ const HOLDER_CACHE_TTL_MS = 45_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const MAX_TOKEN_CACHES = 50;
 
-type FactoryLaunch = {
+export type FactoryLaunch = {
   token: Address;
   curve: Address;
   creator: Address;
@@ -124,20 +124,25 @@ async function getFactoryLaunches(indexedBlock: bigint, forceRefresh: boolean) {
   return state.factoryPending;
 }
 
+export async function getVerifiedFactoryLaunch(tokenAddress: Address, forceRefresh = false) {
+  const indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber());
+  let launches = await getFactoryLaunches(indexedBlock, forceRefresh);
+  let launch = launches.get(tokenAddress.toLowerCase());
+  if (!launch && !forceRefresh) {
+    launches = await getFactoryLaunches(indexedBlock, true);
+    launch = launches.get(tokenAddress.toLowerCase());
+  }
+  if (!launch) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
+  return { launch, indexedBlock };
+}
+
 function percentOf(part: bigint, total: bigint) {
   if (total === 0n) return 0;
   return Number(part * 1_000_000n / total) / 10_000;
 }
 
-async function loadHolderSnapshot(tokenAddress: Address, forceFactoryRefresh: boolean): Promise<HolderSnapshot> {
-  const indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber());
-  let launches = await getFactoryLaunches(indexedBlock, forceFactoryRefresh);
-  let launch = launches.get(tokenAddress.toLowerCase());
-  if (!launch && !forceFactoryRefresh) {
-    launches = await getFactoryLaunches(indexedBlock, true);
-    launch = launches.get(tokenAddress.toLowerCase());
-  }
-  if (!launch) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
+async function loadHolderSnapshot(tokenAddress: Address): Promise<HolderSnapshot> {
+  const { launch, indexedBlock } = await getVerifiedFactoryLaunch(tokenAddress);
 
   const balances = new Map<string, bigint>();
   for (let fromBlock = launch.launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
@@ -205,7 +210,7 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
 
   if (!cache.pending) {
     cache.lastAttemptAt = now;
-    cache.pending = loadHolderSnapshot(tokenAddress, forceRefresh)
+    cache.pending = loadHolderSnapshot(tokenAddress)
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();

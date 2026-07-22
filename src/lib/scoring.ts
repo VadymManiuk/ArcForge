@@ -15,11 +15,11 @@ export function calculateRiskScore(input: RiskInputs): RiskScoreResult {
   add(input.socialsPresent, 5, "socials_present");
   if (!input.socialsPresent) labels.push("missing_socials");
   add(input.verifiedTemplate, 10, "standard_template");
-  add(input.topTenHolderPercent < 35, 10, "low_holder_concentration");
+  add(input.holderConcentrationKnown && input.topTenHolderPercent < 35, 10, "low_holder_concentration");
   add(input.previousCleanLaunches > 0, 5, "known_creator");
   if (input.previousCleanLaunches === 0) labels.push("new_creator");
   if (input.creatorAllocationPercent >= 10) labels.push("high_creator_concentration");
-  score = Math.min(100, score);
+  score = Math.min(input.holderConcentrationKnown ? 100 : 79, score);
   const tier = score >= 80 ? "Clean" : score >= 60 ? "Moderate" : score >= 40 ? "High risk" : "Extreme risk";
   if (score < 40) labels.push("high_risk");
   return { score, tier, labels: [...new Set(labels)] };

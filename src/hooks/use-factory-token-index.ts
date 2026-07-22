@@ -18,7 +18,7 @@ const curveConfigAbi = [
   { type: "function", name: "virtualUsdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "graduationThreshold", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
-const TOKEN_INDEX_CACHE_KEY = `arcforge:${arcTestnet.id}:${ARC_TESTNET_CONTRACTS.factory.toLowerCase()}:factory-index`;
+const TOKEN_INDEX_CACHE_KEY = `arcforge:${arcTestnet.id}:${ARC_TESTNET_CONTRACTS.factory.toLowerCase()}:factory-index-v2`;
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const TOKEN_INDEX_BLOCK_CHUNK = 10_000n;
 
@@ -185,6 +185,7 @@ async function hydrateLaunch(
     creatorAllocationPercent,
     socialsPresent: false,
     verifiedTemplate: true,
+    holderConcentrationKnown: false,
     topTenHolderPercent: 100,
     previousCleanLaunches: 0,
   });

@@ -127,5 +127,5 @@ export function getToken(addressOrTicker: string) {
 }
 
 export function getCreator(address: string) {
-  return creators.find((creator) => creator.address.toLowerCase() === address.toLowerCase()) ?? creators[0];
+  return creators.find((creator) => creator.address.toLowerCase() === address.toLowerCase());
 }

@@ -82,6 +82,9 @@ describe("ArcForgeFactory and ArcForgeToken", function () {
     await usdc.connect(creator).approve(await factory.getAddress(), LAUNCH_FEE * 3n);
     await expect(factory.connect(creator).launchToken(launchParams({ name: "" }))).to.be.revertedWithCustomError(factory, "EmptyName");
     await expect(factory.connect(creator).launchToken(launchParams({ symbol: "" }))).to.be.revertedWithCustomError(factory, "EmptySymbol");
+    await expect(factory.connect(creator).launchToken(launchParams({ name: "N".repeat(65) }))).to.be.revertedWithCustomError(factory, "NameTooLong");
+    await expect(factory.connect(creator).launchToken(launchParams({ symbol: "SYMBOL-LONG" }))).to.be.revertedWithCustomError(factory, "SymbolTooLong");
+    await expect(factory.connect(creator).launchToken(launchParams({ metadataURI: `ipfs://${"x".repeat(506)}` }))).to.be.revertedWithCustomError(factory, "MetadataURITooLong");
     await expect(factory.connect(creator).launchToken(launchParams({ creatorAllocationBps: 2001 })))
       .to.be.revertedWithCustomError(factory, "InvalidAllocation");
   });
@@ -126,16 +129,33 @@ describe("ArcForgeBondingCurve", function () {
     expect(await token.balanceOf(trader.address)).to.equal(0);
   });
 
+  it("refuses a buy that would round the token reserve to zero", async function () {
+    const platform = await deployPlatform();
+    const { trader, usdc } = platform;
+    const { curve } = await launch(platform);
+    const excessiveInput = 10n ** 40n;
+    await usdc.mint(trader.address, excessiveInput);
+    await usdc.connect(trader).approve(await curve.getAddress(), excessiveInput);
+    const [quote] = await curve.quoteBuy(excessiveInput);
+    expect(quote).to.equal(0);
+    await expect(curve.connect(trader).buy(excessiveInput, 0)).to.be.revertedWithCustomError(curve, "SlippageExceeded");
+  });
+
   it("graduates at the configured net-USDC threshold", async function () {
     const platform = await deployPlatform();
     const { trader, usdc } = platform;
-    const { curve } = await launch(platform, { graduationThreshold: 99n * USDC });
+    const { token, curve } = await launch(platform, { graduationThreshold: 99n * USDC });
     const amount = 100n * USDC;
     const [quote] = await curve.quoteBuy(amount);
     await usdc.connect(trader).approve(await curve.getAddress(), amount);
     await expect(curve.connect(trader).buy(amount, quote)).to.emit(curve, "CurveGraduated");
     expect(await curve.isGraduated()).to.equal(true);
     await expect(curve.connect(trader).buy(amount, 0)).to.be.revertedWithCustomError(curve, "AlreadyGraduated");
+    const tokensToSell = quote / 2n;
+    const [usdcOut] = await curve.quoteSell(tokensToSell);
+    await token.connect(trader).approve(await curve.getAddress(), tokensToSell);
+    await expect(curve.connect(trader).sell(tokensToSell, usdcOut)).to.emit(curve, "TokenSold");
+    expect(usdcOut).to.be.greaterThan(0);
   });
 });
 

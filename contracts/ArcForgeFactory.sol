@@ -14,6 +14,9 @@ contract ArcForgeFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint16 public constant MAX_CREATOR_ALLOCATION_BPS = 2_000;
+    uint256 public constant MAX_NAME_BYTES = 64;
+    uint256 public constant MAX_SYMBOL_BYTES = 10;
+    uint256 public constant MAX_METADATA_URI_BYTES = 512;
     bytes32 public constant LAUNCH_FEE = keccak256("LAUNCH_FEE");
 
     struct LaunchParams {
@@ -54,6 +57,9 @@ contract ArcForgeFactory is Ownable, ReentrancyGuard {
 
     error EmptyName();
     error EmptySymbol();
+    error NameTooLong();
+    error SymbolTooLong();
+    error MetadataURITooLong();
     error InvalidAllocation();
     error InvalidConfiguration();
 
@@ -78,6 +84,9 @@ contract ArcForgeFactory is Ownable, ReentrancyGuard {
     function launchToken(LaunchParams calldata params) external nonReentrant returns (address token, address curve) {
         if (bytes(params.name).length == 0) revert EmptyName();
         if (bytes(params.symbol).length == 0) revert EmptySymbol();
+        if (bytes(params.name).length > MAX_NAME_BYTES) revert NameTooLong();
+        if (bytes(params.symbol).length > MAX_SYMBOL_BYTES) revert SymbolTooLong();
+        if (bytes(params.metadataURI).length > MAX_METADATA_URI_BYTES) revert MetadataURITooLong();
         if (params.creatorAllocationBps > MAX_CREATOR_ALLOCATION_BPS) revert InvalidAllocation();
         if (params.totalSupply == 0 || params.virtualUsdcReserve == 0 || params.graduationThreshold == 0) {
             revert InvalidConfiguration();

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ArcForgeFeeVault} from "./ArcForgeFeeVault.sol";
 
 /// @notice A simple virtual-USDC-reserve constant-product curve.
@@ -71,14 +72,15 @@ contract ArcForgeBondingCurve is ReentrancyGuard {
         fee = usdcAmount * buyFeeBps / BPS;
         uint256 netAmount = usdcAmount - fee;
         uint256 currentUsdc = virtualUsdcReserve + usdcReserve;
-        uint256 newTokenReserve = currentUsdc * tokenReserve / (currentUsdc + netAmount);
+        uint256 newTokenReserve = Math.mulDiv(currentUsdc, tokenReserve, currentUsdc + netAmount);
+        if (newTokenReserve == 0) return (0, fee);
         tokensOut = tokenReserve - newTokenReserve;
     }
 
     function quoteSell(uint256 tokenAmount) public view returns (uint256 usdcOut, uint256 fee) {
         if (tokenAmount == 0) return (0, 0);
         uint256 currentUsdc = virtualUsdcReserve + usdcReserve;
-        uint256 newUsdc = currentUsdc * tokenReserve / (tokenReserve + tokenAmount);
+        uint256 newUsdc = Math.mulDiv(currentUsdc, tokenReserve, tokenReserve + tokenAmount);
         uint256 grossOut = currentUsdc - newUsdc;
         if (grossOut > usdcReserve) return (0, 0);
         fee = grossOut * sellFeeBps / BPS;
@@ -108,7 +110,6 @@ contract ArcForgeBondingCurve is ReentrancyGuard {
     }
 
     function sell(uint256 tokenAmount, uint256 minUsdcOut) external nonReentrant returns (uint256 usdcOut) {
-        if (graduated) revert AlreadyGraduated();
         if (tokenAmount == 0) revert ZeroAmount();
         uint256 fee;
         (usdcOut, fee) = quoteSell(tokenAmount);
@@ -129,7 +130,7 @@ contract ArcForgeBondingCurve is ReentrancyGuard {
     }
 
     function getCurrentPrice() external view returns (uint256 usdcPerWholeToken) {
-        return (virtualUsdcReserve + usdcReserve) * 1e18 / tokenReserve;
+        return Math.mulDiv(virtualUsdcReserve + usdcReserve, 1e18, tokenReserve);
     }
 
     function getCurveProgress() external view returns (uint256 progressBps) {

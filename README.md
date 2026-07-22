@@ -33,13 +33,13 @@ pnpm build
 ## Contracts
 
 - `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
-- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection.
+- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. New deployments close buys at graduation while keeping sells available so holders retain an exit path.
 - `ArcForgeFactory`: validates launches, collects a fixed launch fee, deploys token and curve, records creators.
 - `ArcForgeFeeVault`: pulls and records real ERC-20 fees by source; withdraws only to the visible recipient.
 - `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
 - `MockUSDC`: unrestricted minting for local tests only.
 
-The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Migration remains a documented placeholder and is not implemented.
+The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Migration remains a documented placeholder and is not implemented. The currently deployed Arc Testnet v1 curves close both buys and sells at graduation; the updated source keeps post-graduation sells open and requires a new reviewed deployment before it can affect testnet behavior.
 
 ### Deploy to Arc Testnet
 

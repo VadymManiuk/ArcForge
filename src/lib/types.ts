@@ -79,6 +79,7 @@ export type RiskInputs = {
   creatorAllocationPercent: number;
   socialsPresent: boolean;
   verifiedTemplate: boolean;
+  holderConcentrationKnown: boolean;
   topTenHolderPercent: number;
   previousCleanLaunches: number;
 };

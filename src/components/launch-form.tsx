@@ -304,7 +304,7 @@ export function LaunchForm() {
             </label>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Image URL" value={form.image} onChange={(value) => update("image", value)} placeholder="https://…" />
-              <Field label="Metadata URI" value={form.metadata} onChange={(value) => update("metadata", value)} placeholder="ipfs://…" />
+              <Field label="Metadata URI" value={form.metadata} onChange={(value) => update("metadata", value)} placeholder="ipfs://…" maxLength={512} />
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               <Field label="Website" value={form.website} onChange={(value) => update("website", value)} placeholder="https://…" />

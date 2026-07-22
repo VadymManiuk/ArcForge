@@ -35,7 +35,7 @@ export function WarningBox({ children }: { children: ReactNode }) { return <div 
 
 export function RiskBadge({ score }: { score: number }) {
   const tone = score >= 80 ? "good" : score >= 60 ? "warn" : "bad";
-  return <Badge tone={tone}><ShieldCheck className="mr-1 size-3" />{score} risk</Badge>;
+  return <Badge tone={tone}><ShieldCheck className="mr-1 size-3" />{score} score</Badge>;
 }
 
 export function TokenIcon({ label, className }: { label: string; className?: string }) {

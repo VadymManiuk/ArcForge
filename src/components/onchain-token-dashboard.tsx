@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { formatUnits, parseAbiItem, type Address, type GetLogsReturnType, type Hash, type PublicClient } from "viem";
-import { usePublicClient } from "wagmi";
+import { formatUnits, parseAbiItem, publicActions, type Address, type GetLogsReturnType, type Hash, type PublicClient } from "viem";
+import { usePublicClient, useWalletClient } from "wagmi";
 import { TokenChart } from "@/components/token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, StatCard, WarningBox } from "@/components/ui";
 import { arcTestnet } from "@/lib/chains";
@@ -158,23 +158,33 @@ export async function loadOnchainTokenSnapshot(client: PublicClient, token: Toke
 }
 
 export function useOnchainTokenSnapshot(token: TokenData) {
-  const client = usePublicClient({ chainId: arcTestnet.id });
+  const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const { data: walletClient } = useWalletClient();
   const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    if (!client) return;
+    const walletReadClient = walletClient?.chain.id === arcTestnet.id
+      ? walletClient.extend(publicActions) as unknown as PublicClient
+      : null;
+    const clients = [walletReadClient, publicClient].filter((client): client is PublicClient => Boolean(client));
+    if (clients.length === 0) return;
     setLoading(true);
     setError("");
-    try {
-      setSnapshot(await loadOnchainTokenSnapshot(client, token));
-    } catch (loadError) {
-      setError(rpcMessage(loadError));
-    } finally {
-      setLoading(false);
+    let lastError: unknown;
+    for (const client of clients) {
+      try {
+        setSnapshot(await loadOnchainTokenSnapshot(client, token));
+        setLoading(false);
+        return;
+      } catch (loadError) {
+        lastError = loadError;
+      }
     }
-  }, [client, token]);
+    setError(rpcMessage(lastError));
+    setLoading(false);
+  }, [publicClient, token, walletClient]);
 
   useEffect(() => {
     void refresh();

@@ -23,6 +23,8 @@ export type ChartPoint = {
 };
 export type Trade = {
   time: string;
+  /** Unix timestamp from Arc Testnet when available. Demo trades omit it. */
+  timestamp?: number;
   type: "Buy" | "Sell";
   wallet: string;
   usdc: number;
@@ -51,6 +53,8 @@ export type TokenData = {
   creatorAllocationPercent?: number;
   launchTxHash?: string;
   launchBlock?: number;
+  /** Unix timestamp of the factory launch when confirmed by the indexed block. */
+  launchedAt?: number;
   totalSupply?: number;
   virtualUsdcReserve?: number;
   creator: string;

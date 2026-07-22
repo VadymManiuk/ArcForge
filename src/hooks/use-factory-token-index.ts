@@ -61,8 +61,11 @@ function writeCachedIndex(tokens: TokenData[]) {
 }
 
 function applySnapshot(token: TokenData, snapshot: MarketSnapshot, holderSnapshot: HolderSnapshot | null): TokenData {
+  const launchedAt = snapshot.chart.find((point) => point.timestamp)?.timestamp;
   return {
     ...token,
+    launchedAt,
+    ageMinutes: launchedAt ? Math.max(0, Math.floor((Date.now() / 1_000 - launchedAt) / 60)) : token.ageMinutes,
     price: snapshot.price,
     priceChange24h: snapshot.priceChange,
     marketCap: snapshot.marketCap,

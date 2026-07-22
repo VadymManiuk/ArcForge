@@ -187,6 +187,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   const blockTimestamps = await loadBlockTimestamps([launch.launchBlock, ...chartEvents.map((event) => event.blockNumber), indexedBlock]);
   const trades: Trade[] = validEvents.slice().reverse().map((event) => ({
     time: `Block ${event.blockNumber.toString()}`,
+    timestamp: blockTimestamps.get(event.blockNumber.toString()),
     type: event.type,
     wallet: event.wallet,
     usdc: event.usdc,

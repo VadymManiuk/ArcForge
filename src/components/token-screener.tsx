@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { TokenTable } from "@/components/token-table";
+import { MarketDiscovery } from "@/components/market-discovery";
 import { Button, StatCard, WarningBox } from "@/components/ui";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { mockTokens } from "@/lib/mock-data";
@@ -22,6 +23,7 @@ export function TokenScreener() {
       <StatCard label="Curve reserves" value={indexedTokens.length > 0 && !isPartial && !loading ? money(raised) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Updating reserves" : `${mockTokens.length} labeled demo listings available`}/>
     </div>
     {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{isCached && indexedTokens.length > 0 ? `Showing the last confirmed cached snapshot. ${error}` : error}</WarningBox></div><Button variant="ghost" onClick={() => void refresh()}>Retry live data</Button></div>}
+    <MarketDiscovery tokens={tokens}/>
     <TokenTable tokens={tokens} onchainState={liveState}/>
   </div>;
 }

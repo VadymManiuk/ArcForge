@@ -6,6 +6,7 @@ import { usePublicClient, useWalletClient } from "wagmi";
 import { TokenChart } from "@/components/token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, StatCard, WarningBox } from "@/components/ui";
 import { arcTestnet } from "@/lib/chains";
+import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 import { money, number } from "@/lib/utils";
 
@@ -230,6 +231,36 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
 export function OnchainTokenDashboard({ token }: { token: TokenData }) {
   const { snapshot, loading, error, refresh } = useOnchainTokenSnapshot(token);
+  const [holderSnapshot, setHolderSnapshot] = useState<HolderSnapshot | null>(null);
+  const [holderLoading, setHolderLoading] = useState(true);
+  const [holderError, setHolderError] = useState("");
+  const [holderStale, setHolderStale] = useState(false);
+  const refreshHolders = useCallback(async (forceRefresh = false) => {
+    setHolderLoading(true);
+    setHolderError("");
+    try {
+      const response = await fetch(`/api/onchain/tokens/${token.address}/holders${forceRefresh ? "?refresh=1" : ""}`);
+      const payload = await response.json() as { snapshot?: HolderSnapshot; stale?: boolean; error?: string };
+      if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Holder data is unavailable.");
+      setHolderSnapshot(payload.snapshot);
+      setHolderStale(Boolean(payload.stale));
+      if (payload.stale) setHolderError("Showing the latest confirmed holder snapshot while Arc Testnet RPC recovers.");
+    } catch (holderLoadError) {
+      setHolderError(holderLoadError instanceof Error ? holderLoadError.message : "Holder data could not be indexed.");
+    } finally {
+      setHolderLoading(false);
+    }
+  }, [token.address]);
+
+  useEffect(() => {
+    void refreshHolders();
+    const handleTrade = (event: Event) => {
+      const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
+      if (detail?.tokenAddress?.toLowerCase() === token.address.toLowerCase()) void refreshHolders(true);
+    };
+    window.addEventListener("arcforge:trade-confirmed", handleTrade);
+    return () => window.removeEventListener("arcforge:trade-confirmed", handleTrade);
+  }, [refreshHolders, token.address]);
 
   if (!snapshot) {
     return <Panel className="p-5">
@@ -251,9 +282,14 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
       <StatCard label="Market cap" value={money(snapshot.marketCap, true)} detail="Current curve price × supply"/>
       <StatCard label="Onchain volume" value={money(snapshot.volume)} detail={`${snapshot.trades.length} confirmed trades`}/>
-      <StatCard label="Known holders" value="2+" detail="Transfer indexing pending"/>
+      <StatCard label="Holders" value={holderLoading && !holderSnapshot ? "—" : holderSnapshot ? number(holderSnapshot.holders) : "Unavailable"} detail={holderSnapshot ? `Transfer events · block ${holderSnapshot.indexedBlock}` : "Factory-validated index"}/>
       <StatCard label="Since launch" value={`${snapshot.priceChange >= 0 ? "+" : ""}${snapshot.priceChange.toFixed(2)}%`} className={snapshot.priceChange >= 0 ? "text-emerald-300" : "text-rose-300"}/>
     </div>
+    <Panel className="p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><h2 className="mt-2 text-lg font-semibold text-white">Indexed from Transfer events</h2></div><div className="flex gap-2"><Badge tone={holderLoading || holderStale ? "neutral" : "good"}>{holderLoading ? "Updating…" : holderStale ? "Last confirmed" : "Live holders"}</Badge><Button variant="ghost" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
+      {holderSnapshot && <div className="mt-5 grid gap-5 md:grid-cols-3">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Bonding curve", holderSnapshot.curvePercent]].map(([label, value]) => <div key={String(label)}><div className="mb-2 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-300">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
+      {holderError && <WarningBox>{holderError}</WarningBox>}
+    </Panel>
     <Panel className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Bonding curve</p><h2 className="mt-2 text-xl font-semibold text-white">{progressLabel} toward graduation</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">USDC raised</p></div></div>
       <div className="my-5"><Progress value={snapshot.progress}/></div>

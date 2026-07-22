@@ -38,6 +38,10 @@ export type TokenData = {
   name: string;
   ticker: string;
   address: string;
+  curveAddress?: string;
+  source?: "onchain" | "demo";
+  creatorAllocationPercent?: number;
+  launchTxHash?: string;
   creator: string;
   icon: string;
   description: string;

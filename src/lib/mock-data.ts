@@ -53,7 +53,7 @@ export const mockTokens: TokenData[] = definitions.map(([name, ticker, icon, ris
     ? ["fixed_supply", "standard_template", "creator_allocation_visible", "high_creator_concentration", "missing_socials", "high_risk"] as RiskLabel[]
     : positiveLabels.slice(0, Math.max(5, Math.round(riskScore / 11)));
   return {
-    name, ticker, icon, address: addresses[i], creator: creators[i].address,
+    name, ticker, icon, address: addresses[i], creator: creators[i].address, source: "demo",
     description: `${name} is an independent Arc-native community token launched through ArcForge's transparent fixed-supply template.`,
     ageMinutes: [18, 42, 2160, 96, 310, 680, 12, 55, 8200, 1440][i], price,
     priceChange24h: [18.4, 42.1, 7.8, -3.2, 12.4, 31.7, 66.2, -48.3, 4.9, 15.1][i],
@@ -65,8 +65,62 @@ export const mockTokens: TokenData[] = definitions.map(([name, ticker, icon, ris
   };
 });
 
+export const genesisToken: TokenData = {
+  name: "ArcForge Genesis",
+  ticker: "AFG",
+  icon: "AF",
+  address: "0x349C2eE885bfDd3E7f45Faf0b3C636c7556515dE",
+  curveAddress: "0x4fA8F368969754B434e624b6685167B72d77f37B",
+  creator: "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
+  source: "onchain",
+  creatorAllocationPercent: 5,
+  launchTxHash: "0xb877ea3090870b4b98e8cb64aab069dbaa2fb5db2a871c7ecd077c9416a9952d",
+  description: "The first ArcForge fixed-supply token deployed through the live Arc Testnet factory.",
+  ageMinutes: 0,
+  price: 0.00001,
+  priceChange24h: 0,
+  marketCap: 10_000,
+  raisedUSDC: 0,
+  targetUSDC: 50_000,
+  volume5m: 0,
+  volume1h: 0,
+  volume24h: 0,
+  buyers: 0,
+  sellers: 0,
+  trades: 0,
+  holders: 2,
+  curveProgress: 0,
+  riskScore: 76,
+  status: "Live on curve",
+  chartData: [{ time: "Launch", price: 0.00001, volume: 0 }],
+  recentTrades: [],
+  riskLabels: [
+    "fixed_supply",
+    "standard_template",
+    "no_hidden_mint",
+    "no_blacklist",
+    "creator_allocation_visible",
+    "creator_allocation_low",
+    "missing_socials",
+    "new_creator",
+  ],
+  creatorProfile: {
+    address: "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
+    reputation: 50,
+    launches: 1,
+    graduated: 0,
+    flagged: 0,
+    totalVolume: 0,
+    totalFees: 25,
+    verified: false,
+  },
+  socials: {},
+};
+
+export const allTokens: TokenData[] = [genesisToken, ...mockTokens];
+
 export function getToken(addressOrTicker: string) {
-  return mockTokens.find((token) => token.address.toLowerCase() === addressOrTicker.toLowerCase() || token.ticker.toLowerCase() === addressOrTicker.toLowerCase());
+  return allTokens.find((token) => token.address.toLowerCase() === addressOrTicker.toLowerCase() || token.ticker.toLowerCase() === addressOrTicker.toLowerCase());
 }
 
 export function getCreator(address: string) {

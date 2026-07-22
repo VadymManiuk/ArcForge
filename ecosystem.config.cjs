@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: "arcforge",
+    name: "arcorigin",
     script: "pnpm",
     args: "start",
     cwd: __dirname,

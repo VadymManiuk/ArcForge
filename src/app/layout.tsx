@@ -5,7 +5,7 @@ import { Header } from "@/components/header";
 import { DemoBanner } from "@/components/ui";
 
 export const metadata: Metadata = {
-  title: { default: "ArcForge — Launch and discover tokens on Arc", template: "%s · ArcForge" },
+  title: { default: "ArcOrigin — Launch and discover tokens on Arc", template: "%s · ArcOrigin" },
   description: "USDC bonding curves, transparent fees, creator reputation, real-time charts, and risk labels for Arc-native tokens.",
 };
 

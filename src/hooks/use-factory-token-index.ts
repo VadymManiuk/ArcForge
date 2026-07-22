@@ -212,7 +212,7 @@ async function hydrateLaunch(
     launchBlock: Number(launch.blockNumber),
     totalSupply,
     virtualUsdcReserve,
-    description: "ArcForge Factory launch indexed from Arc Testnet events.",
+    description: "ArcOrigin factory launch indexed from Arc Testnet events.",
     ageMinutes: 0,
     price: virtualUsdcReserve / initialReserve,
     priceChange24h: 0,

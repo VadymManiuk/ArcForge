@@ -54,14 +54,14 @@ export const mockTokens: TokenData[] = definitions.map(([name, ticker, icon, ris
     : positiveLabels.slice(0, Math.max(5, Math.round(riskScore / 11)));
   return {
     name, ticker, icon, address: addresses[i], creator: creators[i].address, source: "demo",
-    description: `${name} is an independent Arc-native community token launched through ArcForge's transparent fixed-supply template.`,
+    description: `${name} is an independent Arc-native community token launched through ArcOrigin's transparent fixed-supply template.`,
     ageMinutes: [18, 42, 2160, 96, 310, 680, 12, 55, 8200, 1440][i], price,
     priceChange24h: [18.4, 42.1, 7.8, -3.2, 12.4, 31.7, 66.2, -48.3, 4.9, 15.1][i],
     marketCap: Math.round(price * (700_000_000 + i * 20_000_000)), raisedUSDC: raised, targetUSDC: 50_000,
     volume5m: 820 + i * 419, volume1h: 9200 + (9 - i) * 2741, volume24h: 53000 + (i + 1) * 19421,
     buyers: 78 + i * 43, sellers: 22 + i * 19, trades: 146 + i * 88, holders: 91 + i * 67,
     curveProgress: progress, riskScore, status, chartData, recentTrades: trades(i, price), riskLabels,
-    creatorProfile: creators[i], socials: i === 7 ? {} : { website: "https://arcforge.xyz", x: "https://x.com", telegram: "https://t.me" },
+    creatorProfile: creators[i], socials: i === 7 ? {} : { website: "https://arcorigin.xyz", x: "https://x.com", telegram: "https://t.me" },
   };
 });
 
@@ -78,7 +78,7 @@ export const genesisToken: TokenData = {
   launchBlock: 53_061_367,
   totalSupply: 1_000_000_000,
   virtualUsdcReserve: 10_000,
-  description: "The first ArcForge fixed-supply token deployed through the live Arc Testnet factory.",
+  description: "The original ArcForge-branded genesis token deployed before the ArcOrigin product rebrand.",
   ageMinutes: 0,
   price: 0.00001,
   priceChange24h: 0,

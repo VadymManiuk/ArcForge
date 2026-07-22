@@ -19,7 +19,7 @@ export function CreatorDashboard({ address }: { address: string }) {
   const onchainState = isPartial ? "unavailable" : isCached ? "cached" : loading ? "loading" : "live";
 
   if (!source && loading) return <div className="container-shell pb-20"><EmptyState title="Reading Factory history…" body="Checking confirmed Arc Testnet launches for this wallet."/></div>;
-  if (!source) return <div className="container-shell pb-20"><div className="mb-5"><WarningBox>{error || "No Factory launch or clearly labeled demo profile was found for this wallet."}</WarningBox></div><EmptyState title="No indexed creator history" body="ArcForge does not substitute another creator's profile when this wallet has no indexed launches."/></div>;
+  if (!source) return <div className="container-shell pb-20"><div className="mb-5"><WarningBox>{error || "No Factory launch or clearly labeled demo profile was found for this wallet."}</WarningBox></div><EmptyState title="No indexed creator history" body="ArcOrigin does not substitute another creator's profile when this wallet has no indexed launches."/></div>;
 
   const reputation = source === "onchain" ? profile?.reputation ?? 50 : profile?.reputation ?? 0;
   return <div className="container-shell pb-20">

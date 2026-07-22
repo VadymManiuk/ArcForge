@@ -1,13 +1,13 @@
-# ArcForge
+# ArcOrigin
 
-ArcForge is a USDC-native token launch and discovery layer for Arc. This repository contains a Next.js product interface and a local, tested Solidity protocol implementation for fixed-supply launches and virtual-reserve bonding curves.
+ArcOrigin is a USDC-native token launch and discovery layer for Arc. This repository contains a Next.js product interface and a local, tested Solidity protocol implementation for fixed-supply launches and virtual-reserve bonding curves.
 
 ## Current status
 
 - Frontend: real Arc Testnet approval/launch flow with typed mock/indexed market-data boundaries.
 - Contracts: deployed to Arc Testnet; source is tested but not independently audited.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
-- Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcForge addresses are recorded in `deployment/arc-testnet.json`.
+- Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
 Demo market data, token addresses, transactions, holder metrics, and revenue figures are clearly labeled in the UI. Nothing in this repository is an audit claim or investment advice.
 
@@ -31,6 +31,8 @@ pnpm build
 ```
 
 ## Contracts
+
+The deployed Arc Testnet v1 contracts retain their original `ArcForge*` Solidity names and addresses. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
 
 - `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
 - `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. New deployments close buys at graduation while keeping sells available so holders retain an exit path.
@@ -67,10 +69,10 @@ pm2 save
 pm2 startup
 ```
 
-Copy `deploy/nginx.arcforge.conf` to `/etc/nginx/sites-available/arcforge`, symlink it into `sites-enabled`, validate with `nginx -t`, reload nginx, then request TLS:
+Copy `deploy/nginx.arcorigin.conf` to `/etc/nginx/sites-available/arcorigin`, symlink it into `sites-enabled`, validate with `nginx -t`, reload nginx, then request TLS:
 
 ```bash
-certbot --nginx -d arcforge.xyz -d www.arcforge.xyz
+certbot --nginx -d arcorigin.xyz -d www.arcorigin.xyz
 ```
 
 Run package and OS upgrades deliberately rather than unattended on a production host; validate the build after upgrades and retain a rollback artifact.

@@ -18,12 +18,12 @@ export type ChartPoint = {
   time: string;
   price: number;
   volume: number;
-  /** Unix timestamp from Arc Testnet when available. Demo listings omit it. */
+  /** Unix timestamp from the indexed Arc Testnet block when available. */
   timestamp?: number;
 };
 export type Trade = {
   time: string;
-  /** Unix timestamp from Arc Testnet when available. Demo trades omit it. */
+  /** Unix timestamp from the indexed Arc Testnet block when available. */
   timestamp?: number;
   type: "Buy" | "Sell";
   wallet: string;
@@ -49,7 +49,7 @@ export type TokenData = {
   image?: string;
   metadataURI?: string;
   curveAddress?: string;
-  source?: "onchain" | "demo";
+  source: "onchain";
   creatorAllocationPercent?: number;
   launchTxHash?: string;
   launchBlock?: number;

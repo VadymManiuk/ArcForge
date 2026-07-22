@@ -5,7 +5,7 @@ import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData } from "@/lib/types";
 
-const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v4";
+const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v5";
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 
 type CachedIndex = { savedAt: number; tokens: TokenData[] };
@@ -61,7 +61,7 @@ function writeCachedIndex(tokens: TokenData[]) {
 }
 
 function applySnapshot(token: TokenData, snapshot: MarketSnapshot, holderSnapshot: HolderSnapshot | null): TokenData {
-  const launchedAt = snapshot.chart.find((point) => point.timestamp)?.timestamp;
+  const launchedAt = token.launchedAt ?? snapshot.chart.find((point) => point.timestamp)?.timestamp;
   return {
     ...token,
     launchedAt,

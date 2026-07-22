@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, Settings2 } from "lucide-react";
 import {
   formatUnits,
@@ -20,8 +20,7 @@ import {
 import { ARC_TESTNET_CONTRACTS, arcTestnet } from "@/lib/chains";
 import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
 import type { TokenData } from "@/lib/types";
-import { money, number } from "@/lib/utils";
-import { ArcscanLink, Badge, Button, WarningBox } from "./ui";
+import { ArcscanLink, Badge, Button } from "./ui";
 
 type Side = "Buy" | "Sell";
 type LiveQuote = { input: bigint; output: bigint; fee: bigint; minimumOutput: bigint };
@@ -73,10 +72,10 @@ function inputUnits(value: bigint, decimals: number) {
 }
 
 export function BuySellPanel({ token }: { token: TokenData }) {
-  if (token.source === "onchain" && token.curveAddress) {
+  if (token.curveAddress) {
     return <LiveBuySellPanel token={token} curveAddress={token.curveAddress as Address} />;
   }
-  return <DemoBuySellPanel token={token} />;
+  return <div className="panel p-5"><Badge tone="warn">Onchain data unavailable</Badge><p className="mt-4 text-sm leading-6 text-slate-400">The indexed Factory event did not include a usable bonding-curve address. Trading is disabled.</p></div>;
 }
 
 function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddress: Address }) {
@@ -311,18 +310,4 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     {notice && <p className={`mt-3 rounded-lg p-2 text-[11px] leading-4 ${transactionHash ? "bg-emerald-400/[.07] text-emerald-300" : "bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
     <p className="mt-4 text-[11px] leading-5 text-slate-500">{token.status === "Graduated" ? "Buying is closed after graduation. Selling remains available while the curve has USDC liquidity." : `Trades execute against the deployed ${token.ticker} curve. Your wallet may request an exact-token approval first.`}</p>
   </div>;
-}
-
-function DemoBuySellPanel({ token }: { token: TokenData }) {
-  const [side, setSide] = useState<Side>("Buy");
-  const [amount, setAmount] = useState("100");
-  const [slippage, setSlippage] = useState(1);
-  const [notice, setNotice] = useState("");
-  const rawAmount = Number(amount) || 0;
-  const fee = rawAmount * 0.01;
-  const tokenAmount = useMemo(() => side === "Buy" ? Math.max(0, rawAmount - fee) / token.price : rawAmount, [rawAmount, fee, side, token.price]);
-  const output = side === "Buy" ? tokenAmount : tokenAmount * token.price * 0.99;
-  const impact = Math.min(9.99, rawAmount / Math.max(token.raisedUSDC, 1) * 4.2);
-
-  return <div className="panel p-4"><div className="mb-3"><Badge tone="neutral">Demo quote</Badge></div><div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div><div className="mt-5 flex items-center justify-between"><label className="label mb-0">You pay</label><button onClick={() => setSlippage(slippage === 1 ? 0.5 : 1)} className="flex items-center gap-1 text-[10px] text-slate-500"><Settings2 className="size-3" />{slippage}% slippage</button></div><div className="mt-2 flex items-center rounded-xl border border-line bg-[#080c13] px-3 focus-within:border-cyan/50"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none" /><Badge tone="neutral">{side === "Buy" ? "USDC" : token.ticker}</Badge></div><div className="relative my-3 flex justify-center"><span className="grid size-7 place-items-center rounded-full border border-line bg-panel text-slate-500"><ArrowDown className="size-3" /></span></div><label className="label">Expected output</label><div className="flex h-14 items-center justify-between rounded-xl border border-line bg-[#080c13] px-3"><span className="text-xl font-semibold text-white">{number(output)}</span><Badge tone="cyan">{side === "Buy" ? token.ticker : "USDC"}</Badge></div><dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">1.00% · {money(fee)}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Price impact</dt><dd className={impact > 5 ? "text-rose-300" : "text-slate-300"}>{impact.toFixed(2)}%</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{number(output * (1 - slippage / 100))} {side === "Buy" ? token.ticker : "USDC"}</dd></div></dl><Button className="w-full" onClick={() => setNotice(`Simulated ${side.toLowerCase()} only. Choose an Onchain token to trade.`)}>{side} {token.ticker}</Button>{notice && <p className="mt-3 rounded-lg bg-cyan/[.06] p-2 text-[11px] leading-4 text-cyan">{notice}</p>}<div className="mt-4"><WarningBox>This listing is simulated and does not submit transactions.</WarningBox></div></div>;
 }

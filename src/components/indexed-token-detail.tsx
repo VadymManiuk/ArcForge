@@ -7,7 +7,7 @@ import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
 import { AddressPill, Badge, Button, Panel, RiskBadge, TokenIcon, WarningBox } from "@/components/ui";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { EXPLORER_URL } from "@/lib/chains";
-import { shortAddress } from "@/lib/utils";
+import { shortAddress, utcDateTime } from "@/lib/utils";
 
 export function IndexedTokenDetail({ address }: { address: string }) {
   const { tokens, loading, error, refresh } = useFactoryTokenIndex({ includeMarketData: false, allowCache: false });
@@ -40,7 +40,8 @@ export function IndexedTokenDetail({ address }: { address: string }) {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <AddressPill address={token.address} />
-            <span>Creator {shortAddress(token.creator)}</span>
+            <span>Launched {utcDateTime(token.launchedAt)}</span>
+            <span>by <Link href={`/creators/${token.creator}`} className="text-slate-300 hover:text-cyan">{shortAddress(token.creator)}</Link></span>
             <Badge tone="good">Onchain</Badge>
           </div>
         </div>

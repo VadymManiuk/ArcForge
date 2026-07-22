@@ -51,7 +51,7 @@ export default function Home() {
       <SectionHeading
         eyebrow="Live on Arc Testnet"
         title="Markets"
-        body="Factory-launched tokens only. Simulated listings stay in the full screener and are always labeled."
+        body="Only tokens confirmed by Arc Testnet Factory events are listed. Launches, trades, reserves, and timestamps come from onchain data."
         action={<Link href="/tokens" className="inline-flex items-center gap-2 text-sm text-cyan">View all markets <ArrowRight className="size-4" /></Link>}
       />
       <div className="mt-7"><HomeMarket /></div>

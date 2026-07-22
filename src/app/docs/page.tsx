@@ -24,7 +24,7 @@ const sections = [
     title: "Verify",
     items: [
       ["Data", "Launches, trades, charts, and fees are read from Arc Testnet events."],
-      ["Labels", "Demo listings and unavailable signals are explicitly identified."],
+      ["Listings", "Only tokens confirmed by configured Arc Testnet Factory events are displayed."],
       ["Risk", "Scores organize observable signals; they never guarantee safety."],
     ],
   },

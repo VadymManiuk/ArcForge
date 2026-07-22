@@ -26,4 +26,17 @@ export function age(minutes: number) {
   return `${Math.floor(minutes / 1_440)}d`;
 }
 
+export function utcDateTime(timestamp?: number) {
+  if (!timestamp) return "Time unavailable";
+  return `${new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp * 1_000))} UTC`;
+}
+
 function trimZeros(value: string) { return value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value; }

@@ -4,8 +4,8 @@ import { ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
 import { EXPLORER_URL } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 
-export function DemoBanner() {
-  return <div className="border-b border-line bg-[#0b0e0f] py-1.5 text-center text-[11px] text-slate-400"><span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-400 align-middle"/>Arc Testnet · contracts live · simulated listings are labeled</div>;
+export function NetworkBanner() {
+  return <div className="border-b border-line bg-[#0b0e0f] py-1.5 text-center text-[11px] text-slate-400"><span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-400 align-middle"/>Arc Testnet · verified Factory launches and trades only</div>;
 }
 
 export function Button({ className, variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createPublicClient, formatUnits, http } from "viem";
 import { arcTestnet } from "@/lib/chains";
-import { genesisToken } from "@/lib/mock-data";
+import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
 import { resolveTokenMetadata } from "@/lib/server/token-metadata-resolver";
@@ -86,6 +86,8 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     const metadata = cached.metadataURI ? await resolveTokenMetadata(cached.metadataURI) : null;
     return {
       ...cached,
+      launchedAt: launch.launchedAt,
+      ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
       image: metadata?.image ?? cached.image,
       description: metadata?.description ?? cached.description,
       socials: {
@@ -96,18 +98,20 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     };
   }
 
-  if (launch.token.toLowerCase() === genesisToken.address.toLowerCase()) {
+  if (launch.token.toLowerCase() === legacyGenesisToken.address.toLowerCase()) {
     const token: TokenData = {
-      ...genesisToken,
+      ...legacyGenesisToken,
       name: launch.name,
       ticker: launch.symbol,
       address: launch.token,
       curveAddress: launch.curve,
       creator: launch.creator,
       launchBlock: Number(launch.launchBlock),
+      launchedAt: launch.launchedAt,
+      ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
       launchTxHash: launch.transactionHash,
       holders: 0,
-      creatorProfile: { ...genesisToken.creatorProfile, launches: creatorLaunches },
+      creatorProfile: { ...legacyGenesisToken.creatorProfile, launches: creatorLaunches },
     };
     state.hydratedTokens.set(cacheKey, token);
     return token;
@@ -163,10 +167,11 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     creatorAllocationPercent,
     launchTxHash: launch.transactionHash,
     launchBlock: Number(launch.launchBlock),
+    launchedAt: launch.launchedAt,
     totalSupply,
     virtualUsdcReserve,
     description: metadata?.description ?? "ArcOrigin factory launch indexed from Arc Testnet events.",
-    ageMinutes: 0,
+    ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
     price: launchPrice,
     priceChange24h: 0,
     marketCap: launchPrice * totalSupply,
@@ -182,7 +187,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     curveProgress: 0,
     riskScore: risk.score,
     status: "Live on curve",
-    chartData: [{ time: "Launch", price: launchPrice, volume: 0 }],
+    chartData: [{ time: "Launch", timestamp: launch.launchedAt, price: launchPrice, volume: 0 }],
     recentTrades: [],
     riskLabels: risk.labels,
     creatorProfile,

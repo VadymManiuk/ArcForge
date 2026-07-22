@@ -8,5 +8,5 @@ export const metadata: Metadata = { title: "Creator Profile" };
 
 export default async function CreatorPage({ params }: Props) {
   const address = (await params).address;
-  return <><PageIntro eyebrow="Creator reputation" title={shortAddress(address,6)} body="Wallet-linked launch history from Factory events. Demo profiles are shown only for explicitly simulated listings."/><CreatorDashboard address={address}/></>;
+  return <><PageIntro eyebrow="Creator reputation" title={shortAddress(address,6)} body="Wallet-linked launch history confirmed by Arc Testnet Factory events."/><CreatorDashboard address={address}/></>;
 }

@@ -19,6 +19,7 @@ export type FactoryLaunch = {
   name: string;
   symbol: string;
   launchBlock: bigint;
+  launchedAt: number;
   transactionHash: Hash;
 };
 
@@ -40,6 +41,7 @@ type HolderCacheEntry = {
 
 type HolderState = {
   factoryLaunches: Map<string, FactoryLaunch>;
+  factoryBlockTimestamps: Map<string, number>;
   factoryCachedAt: number;
   factoryPending: Promise<Map<string, FactoryLaunch>> | null;
   tokenCaches: Map<string, HolderCacheEntry>;
@@ -57,10 +59,12 @@ declare global {
 
 const state = globalThis.__arcOriginHolderState ?? {
   factoryLaunches: new Map(),
+  factoryBlockTimestamps: new Map(),
   factoryCachedAt: 0,
   factoryPending: null,
   tokenCaches: new Map(),
 };
+state.factoryBlockTimestamps ??= new Map();
 globalThis.__arcOriginHolderState = state;
 
 export class FactoryTokenNotFoundError extends Error {}
@@ -106,16 +110,29 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
           name: log.args.name ?? "Indexed token",
           symbol: log.args.symbol ?? "TOKEN",
           launchBlock: log.blockNumber ?? 0n,
+          launchedAt: 0,
           transactionHash: log.transactionHash as Hash,
         });
       }
     }
   }
+  for (const launch of launches.values()) {
+    const blockKey = launch.launchBlock.toString();
+    let launchedAt = state.factoryBlockTimestamps.get(blockKey);
+    if (launchedAt === undefined) {
+      const block = await withRpcRetry(() => publicClient.getBlock({ blockNumber: launch.launchBlock }));
+      launchedAt = Number(block.timestamp);
+      state.factoryBlockTimestamps.set(blockKey, launchedAt);
+      await wait(80);
+    }
+    launch.launchedAt = launchedAt;
+  }
   return launches;
 }
 
 async function getFactoryLaunches(indexedBlock: bigint, forceRefresh: boolean) {
-  if (!forceRefresh && state.factoryLaunches.size > 0 && Date.now() - state.factoryCachedAt < FACTORY_CACHE_TTL_MS) {
+  const cachedLaunchesHaveTimestamps = [...state.factoryLaunches.values()].every((launch) => Number.isInteger(launch.launchedAt) && launch.launchedAt > 0);
+  if (!forceRefresh && state.factoryLaunches.size > 0 && cachedLaunchesHaveTimestamps && Date.now() - state.factoryCachedAt < FACTORY_CACHE_TTL_MS) {
     return state.factoryLaunches;
   }
   if (!state.factoryPending) {

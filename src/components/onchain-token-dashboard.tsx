@@ -93,10 +93,12 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
   const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token);
   const [activeTab, setActiveTab] = useState<TerminalTab>("Trades");
   const [holderSnapshot, setHolderSnapshot] = useState<HolderSnapshot | null>(null);
-  const [holderLoading, setHolderLoading] = useState(true);
+  const [holderLoading, setHolderLoading] = useState(false);
+  const [holderRequested, setHolderRequested] = useState(false);
   const [holderError, setHolderError] = useState("");
   const [holderStale, setHolderStale] = useState(false);
   const refreshHolders = useCallback(async (forceRefresh = false) => {
+    setHolderRequested(true);
     setHolderLoading(true);
     setHolderError("");
     try {
@@ -114,14 +116,17 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
   }, [token.address]);
 
   useEffect(() => {
-    void refreshHolders();
     const handleTrade = (event: Event) => {
       const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
-      if (detail?.tokenAddress?.toLowerCase() === token.address.toLowerCase()) void refreshHolders(true);
+      if (holderRequested && detail?.tokenAddress?.toLowerCase() === token.address.toLowerCase()) void refreshHolders(true);
     };
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
     return () => window.removeEventListener("arcforge:trade-confirmed", handleTrade);
-  }, [refreshHolders, token.address]);
+  }, [holderRequested, refreshHolders, token.address]);
+
+  useEffect(() => {
+    if (activeTab === "Holders" && !holderRequested) void refreshHolders();
+  }, [activeTab, holderRequested, refreshHolders]);
 
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
   const effectiveQuoteDepth = snapshot.graduated && permanentLiquidityMode
@@ -131,7 +136,7 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
   const tabs: Array<{ label: TerminalTab; count?: string }> = [
     { label: "Trades", count: String(snapshot.trades.length) },
-    { label: "Holders", count: holderSnapshot ? number(holderSnapshot.holders) : undefined },
+    { label: "Holders", count: holderSnapshot ? number(holderSnapshot.holders) : token.holders > 0 ? number(token.holders) : undefined },
     { label: "Curve" },
     { label: "Info" },
   ];
@@ -142,7 +147,7 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
       <TerminalMetric label="Market cap" value={money(snapshot.marketCap, true)} />
       <TerminalMetric label="Liquidity" value={money(snapshot.raisedUsdc, true)} detail="Real USDC" />
       <TerminalMetric label="Volume" value={money(snapshot.volume, true)} detail="All onchain" />
-      <TerminalMetric label="Holders" value={holderSnapshot ? number(holderSnapshot.holders) : holderLoading ? "…" : "—"} />
+      <TerminalMetric label="Holders" value={holderSnapshot ? number(holderSnapshot.holders) : token.holders > 0 ? number(token.holders) : "—"} />
       <TerminalMetric
         label="Since launch"
         value={`${snapshot.priceChange >= 0 ? "+" : ""}${snapshot.priceChange.toFixed(2)}%`}
@@ -187,7 +192,8 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
       </div>}
 
       {activeTab === "Holders" && <div className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><p className="mt-2 text-sm text-slate-400">Calculated from confirmed ERC-20 Transfer events.</p></div><div className="flex items-center gap-2"><Badge tone={holderLoading || holderStale ? "neutral" : "good"}>{holderLoading ? "Updating" : holderStale ? "Last confirmed" : "Live holders"}</Badge><Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><p className="mt-2 text-sm text-slate-400">Calculated from confirmed ERC-20 Transfer events.</p></div><div className="flex items-center gap-2"><Badge tone={holderLoading || holderStale || !holderSnapshot ? "neutral" : "good"}>{holderLoading ? "Updating" : holderStale ? "Last confirmed" : holderSnapshot ? "Live holders" : "Ready"}</Badge><Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
+        {holderLoading && !holderSnapshot && <div className="mt-8 rounded-xl border border-line bg-black/15 px-4 py-10 text-center text-sm text-slate-500">Indexing confirmed holder transfers…</div>}
         {holderSnapshot && <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Trading curve", holderSnapshot.curvePercent], ["Permanent lock", holderSnapshot.permanentLiquidityLockPercent]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-line bg-black/15 p-4"><div className="mb-3 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-200">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
         {holderError && <div className="mt-4"><WarningBox>{holderError}</WarningBox></div>}
       </div>}

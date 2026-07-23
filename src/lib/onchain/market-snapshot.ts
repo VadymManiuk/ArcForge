@@ -3,28 +3,19 @@ import "server-only";
 import { createPublicClient, decodeEventLog, formatUnits, http, parseAbiItem, type Address, type Hash } from "viem";
 import { arcTestnet } from "@/lib/chains";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
-import { getVerifiedFactoryLaunch } from "@/lib/onchain/holder-snapshot";
+import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
+import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 import type { ChartPoint, Trade } from "@/lib/types";
 
 const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)");
 const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
 const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
-const tokenConfigAbi = [{ type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] }] as const;
-const curveAbi = [
-  { type: "function", name: "initialTokenReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "virtualUsdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "graduationThreshold", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "tokenReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "isGraduated", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
-] as const;
 const LOG_BLOCK_RANGE = 9_999n;
 const CHART_TRADE_LIMIT = 240;
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const MAX_TOKEN_CACHES = 50;
 const MAX_BLOCK_TIMESTAMPS = 1_000;
-const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 export type MarketSnapshot = {
   price: number;
@@ -60,6 +51,7 @@ type IndexedTrade = {
   type: "Buy" | "Sell";
   usdc: number;
   notional: number;
+  reserveUsdcDelta: number;
   tokens: number;
   timestamp?: number;
 };
@@ -120,7 +112,20 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
     missingBlocks.push(blockKey);
   }
   const blocks = await Promise.all(missingBlocks.map(async (blockKey) => {
-    const block = await withRpcRetry(() => publicClient.getBlock({ blockNumber: BigInt(blockKey) }));
+    const response = await fetch(process.env.ARC_TESTNET_RPC_URL ?? "https://rpc.testnet.arc.network", {
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: blockKey,
+        method: "eth_getBlockByNumber",
+        params: [`0x${BigInt(blockKey).toString(16)}`, false],
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+    });
+    const payload = await response.json() as { result?: { timestamp?: string } };
+    if (!response.ok || !payload.result?.timestamp) throw new Error("Arc RPC block timestamp is unavailable.");
+    const block = { timestamp: BigInt(payload.result.timestamp) };
     return { blockKey, block };
   }));
   for (const { blockKey, block } of blocks) {
@@ -136,24 +141,24 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
 }
 
 async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot> {
-  const { launch, indexedBlock } = await getVerifiedFactoryLaunch(tokenAddress);
-  const [totalSupplyRaw, initialReserveRaw, virtualUsdcRaw, graduationRaw, tokenReserveRaw, usdcReserveRaw, graduated] = await withRpcRetry(
-    () => publicClient.multicall({
-      allowFailure: false,
-      blockNumber: indexedBlock,
-      multicallAddress: MULTICALL3_ADDRESS,
-      contracts: [
-        { address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" },
-        { address: launch.curve, abi: curveAbi, functionName: "initialTokenReserve" },
-        { address: launch.curve, abi: curveAbi, functionName: "virtualUsdcReserve" },
-        { address: launch.curve, abi: curveAbi, functionName: "graduationThreshold" },
-        { address: launch.curve, abi: curveAbi, functionName: "tokenReserve" },
-        { address: launch.curve, abi: curveAbi, functionName: "usdcReserve" },
-        { address: launch.curve, abi: curveAbi, functionName: "isGraduated" },
-      ],
-    }),
-  );
-  if (tokenReserveRaw <= 0n || initialReserveRaw <= 0n || totalSupplyRaw <= 0n) throw new Error("Curve reserves are invalid at the indexed block.");
+  const indexResult = await getTokenIndexSnapshot();
+  const indexSnapshot = indexResult.snapshot;
+  if (!indexSnapshot) throw new Error("Factory token index is unavailable.");
+  const baseToken = indexSnapshot.tokens.find((token) => token.address.toLowerCase() === tokenAddress.toLowerCase());
+  if (!baseToken) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
+  if (!baseToken.curveAddress
+    || baseToken.launchBlock === undefined
+    || baseToken.totalSupply === undefined
+    || baseToken.creatorAllocationPercent === undefined
+    || baseToken.virtualUsdcReserve === undefined) {
+    throw new Error("Factory token configuration is incomplete.");
+  }
+  const indexedBlock = BigInt(indexSnapshot.indexedBlock);
+  const launch = {
+    curve: baseToken.curveAddress as Address,
+    launchBlock: BigInt(baseToken.launchBlock),
+    launchedAt: baseToken.launchedAt ?? Math.floor(Date.now() / 1_000),
+  };
 
   const events: IndexedTrade[] = [];
   let explorerLogs;
@@ -182,6 +187,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
         type: "Buy",
         usdc: Number(formatUnits(decoded.args.usdcIn, 6)),
         notional: Number(formatUnits(decoded.args.usdcIn, 6)),
+        reserveUsdcDelta: Number(formatUnits(decoded.args.usdcIn - decoded.args.fee, 6)),
         tokens: Number(formatUnits(decoded.args.tokensOut, 18)),
         timestamp: log.timestamp,
       } : {
@@ -192,6 +198,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
         type: "Sell",
         usdc: Number(formatUnits(decoded.args.usdcOut, 6)),
         notional: Number(formatUnits(decoded.args.usdcOut + decoded.args.fee, 6)),
+        reserveUsdcDelta: -Number(formatUnits(decoded.args.usdcOut + decoded.args.fee, 6)),
         tokens: Number(formatUnits(decoded.args.tokensIn, 18)),
         timestamp: log.timestamp,
       });
@@ -214,6 +221,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
           type: "Buy",
           usdc: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
           notional: Number(formatUnits(log.args.usdcIn ?? 0n, 6)),
+          reserveUsdcDelta: Number(formatUnits((log.args.usdcIn ?? 0n) - (log.args.fee ?? 0n), 6)),
           tokens: Number(formatUnits(log.args.tokensOut ?? 0n, 18)),
         } : {
           blockNumber: log.blockNumber ?? 0n,
@@ -223,6 +231,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
           type: "Sell",
           usdc: Number(formatUnits(log.args.usdcOut ?? 0n, 6)),
           notional: Number(formatUnits((log.args.usdcOut ?? 0n) + (log.args.fee ?? 0n), 6)),
+          reserveUsdcDelta: -Number(formatUnits((log.args.usdcOut ?? 0n) + (log.args.fee ?? 0n), 6)),
           tokens: Number(formatUnits(log.args.tokensIn ?? 0n, 18)),
         });
       }
@@ -230,18 +239,25 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
     }
   }
 
-  const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
-  const initialReserve = Number(formatUnits(initialReserveRaw, 18));
-  const virtualUsdc = Number(formatUnits(virtualUsdcRaw, 6));
-  const targetUsdc = Number(formatUnits(graduationRaw, 6));
-  const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
-  const raisedUsdc = Number(formatUnits(usdcReserveRaw, 6));
-  const price = (virtualUsdc + raisedUsdc) / tokenReserve;
+  const totalSupply = baseToken.totalSupply;
+  const initialReserve = totalSupply * (1 - baseToken.creatorAllocationPercent / 100);
+  const virtualUsdc = baseToken.virtualUsdcReserve;
+  const targetUsdc = baseToken.targetUSDC;
   const launchPrice = virtualUsdc / initialReserve;
 
   const validEvents = events.filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
     ? left.logIndex - right.logIndex
     : left.blockNumber < right.blockNumber ? -1 : 1);
+  let tokenReserve = initialReserve;
+  let raisedUsdc = 0;
+  let graduated = false;
+  for (const event of validEvents) {
+    tokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
+    raisedUsdc = roundUsdc(Math.max(0, raisedUsdc + event.reserveUsdcDelta));
+    if (raisedUsdc >= targetUsdc) graduated = true;
+  }
+  if (tokenReserve <= 0 || initialReserve <= 0 || totalSupply <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
+  const price = (virtualUsdc + raisedUsdc) / tokenReserve;
 
   const chartEvents = validEvents.slice(-CHART_TRADE_LIMIT);
   const missingTimestampBlocks = chartEvents.filter((event) => event.timestamp === undefined).map((event) => event.blockNumber);

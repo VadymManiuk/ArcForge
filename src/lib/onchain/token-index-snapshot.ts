@@ -38,11 +38,7 @@ type TokenIndexState = {
 const rpcUrl = process.env.ARC_TESTNET_RPC_URL ?? arcTestnet.rpcUrls.default.http[0];
 const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(rpcUrl, {
-    batch: { batchSize: 10, wait: 20 },
-    retryCount: 0,
-    timeout: 15_000,
-  }),
+  transport: http(rpcUrl, { retryCount: 0, timeout: 15_000 }),
 });
 
 declare global {
@@ -216,12 +212,14 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
     const creator = launch.creator.toLowerCase();
     creatorCounts.set(creator, (creatorCounts.get(creator) ?? 0) + 1);
   }
-  const tokens = await Promise.all(
-    launches.slice().reverse().map((launch) => hydrateLaunch(
+  const reversedLaunches = launches.slice().reverse();
+  const tokens: TokenData[] = [];
+  for (let index = 0; index < reversedLaunches.length; index += 2) {
+    tokens.push(...await Promise.all(reversedLaunches.slice(index, index + 2).map((launch) => hydrateLaunch(
       launch,
       creatorCounts.get(launch.creator.toLowerCase()) ?? 1,
-    )),
-  );
+    ))));
+  }
   return { tokens, indexedBlock: indexedBlock.toString(), generatedAt: new Date().toISOString() };
 }
 

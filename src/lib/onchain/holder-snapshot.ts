@@ -45,6 +45,7 @@ type HolderState = {
   factoryLaunches: Map<string, FactoryLaunch>;
   factoryBlockTimestamps: Map<string, number>;
   factoryCachedAt: number;
+  factoryIndexedBlock: bigint;
   factoryPending: Promise<Map<string, FactoryLaunch>> | null;
   tokenCaches: Map<string, HolderCacheEntry>;
 };
@@ -63,10 +64,12 @@ const state = globalThis.__arcOriginHolderState ?? {
   factoryLaunches: new Map(),
   factoryBlockTimestamps: new Map(),
   factoryCachedAt: 0,
+  factoryIndexedBlock: 0n,
   factoryPending: null,
   tokenCaches: new Map(),
 };
 state.factoryBlockTimestamps ??= new Map();
+state.factoryIndexedBlock ??= 0n;
 globalThis.__arcOriginHolderState = state;
 
 export class FactoryTokenNotFoundError extends Error {}
@@ -188,7 +191,12 @@ async function getFactoryLaunches(indexedBlock: bigint, forceRefresh: boolean) {
 }
 
 export async function getVerifiedFactoryLaunch(tokenAddress: Address, forceRefresh = false) {
-  const indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber());
+  const factoryCacheIsFresh = !forceRefresh
+    && state.factoryIndexedBlock > 0n
+    && Date.now() - state.factoryCachedAt < FACTORY_CACHE_TTL_MS;
+  const indexedBlock = factoryCacheIsFresh
+    ? state.factoryIndexedBlock
+    : await withRpcRetry(() => publicClient.getBlockNumber());
   let launches = await getFactoryLaunches(indexedBlock, forceRefresh);
   let launch = launches.get(tokenAddress.toLowerCase());
   if (!launch && !forceRefresh) {
@@ -202,6 +210,7 @@ export async function getVerifiedFactoryLaunch(tokenAddress: Address, forceRefre
 export async function getFactoryLaunchIndex(forceRefresh = false) {
   const indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber());
   const launches = await getFactoryLaunches(indexedBlock, forceRefresh);
+  state.factoryIndexedBlock = indexedBlock;
   return { launches: [...launches.values()], indexedBlock };
 }
 

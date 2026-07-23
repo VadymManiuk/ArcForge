@@ -17,8 +17,8 @@ export function TokenScreener() {
   return <div className="container-shell pb-20">
     <div className="mb-5 grid gap-3 sm:grid-cols-3">
       <StatCard label="Factory launches" value={loading && indexedTokens.length === 0 ? "—" : String(indexedTokens.length)} detail={isCached && cachedAt ? `Cached ${new Date(cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Confirmed onchain"}/>
-      <StatCard label="Onchain volume" value={indexedTokens.length > 0 && !isPartial && !loading ? money(onchainVolume) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Updating confirmed trades" : `${trades} confirmed trades`}/>
-      <StatCard label="Curve reserves" value={indexedTokens.length > 0 && !isPartial && !loading ? money(raised) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Updating reserves" : "Confirmed onchain reserves"}/>
+      <StatCard label="Onchain volume" value={indexedTokens.length > 0 && !isPartial ? money(onchainVolume) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Refreshing in background" : `${trades} confirmed trades`}/>
+      <StatCard label="Curve reserves" value={indexedTokens.length > 0 && !isPartial ? money(raised) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Refreshing in background" : "Confirmed onchain reserves"}/>
     </div>
     {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{isCached && indexedTokens.length > 0 ? `Showing the last confirmed cached snapshot. ${error}` : error}</WarningBox></div><Button variant="ghost" onClick={() => void refresh()}>Retry live data</Button></div>}
     <MarketDiscovery tokens={tokens}/>

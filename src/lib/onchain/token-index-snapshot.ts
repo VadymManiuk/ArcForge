@@ -19,7 +19,7 @@ const curveConfigAbi = [
 ] as const;
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
-const RPC_REQUEST_GAP_MS = 220;
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 type TokenIndexSnapshot = {
   tokens: TokenData[];
@@ -38,7 +38,11 @@ type TokenIndexState = {
 const rpcUrl = process.env.ARC_TESTNET_RPC_URL ?? arcTestnet.rpcUrls.default.http[0];
 const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(rpcUrl, { retryCount: 0, timeout: 15_000 }),
+  transport: http(rpcUrl, {
+    batch: { batchSize: 10, wait: 20 },
+    retryCount: 0,
+    timeout: 15_000,
+  }),
 });
 
 declare global {
@@ -118,15 +122,19 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     return token;
   }
 
-  const totalSupplyRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" }));
-  await wait(RPC_REQUEST_GAP_MS);
-  const metadataURI = await withRpcRetry(() => publicClient.readContract({ address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" }));
-  await wait(RPC_REQUEST_GAP_MS);
-  const initialReserveRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "initialTokenReserve" }));
-  await wait(RPC_REQUEST_GAP_MS);
-  const virtualUsdcRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "virtualUsdcReserve" }));
-  await wait(RPC_REQUEST_GAP_MS);
-  const graduationRaw = await withRpcRetry(() => publicClient.readContract({ address: launch.curve, abi: curveConfigAbi, functionName: "graduationThreshold" }));
+  const [totalSupplyRaw, metadataURI, initialReserveRaw, virtualUsdcRaw, graduationRaw] = await withRpcRetry(
+    () => publicClient.multicall({
+      allowFailure: false,
+      multicallAddress: MULTICALL3_ADDRESS,
+      contracts: [
+        { address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" },
+        { address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" },
+        { address: launch.curve, abi: curveConfigAbi, functionName: "initialTokenReserve" },
+        { address: launch.curve, abi: curveConfigAbi, functionName: "virtualUsdcReserve" },
+        { address: launch.curve, abi: curveConfigAbi, functionName: "graduationThreshold" },
+      ],
+    }),
+  );
   const metadata = await resolveTokenMetadata(metadataURI);
   const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
   const initialReserve = Number(formatUnits(initialReserveRaw, 18));
@@ -208,10 +216,12 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
     const creator = launch.creator.toLowerCase();
     creatorCounts.set(creator, (creatorCounts.get(creator) ?? 0) + 1);
   }
-  const tokens: TokenData[] = [];
-  for (const launch of launches.slice().reverse()) {
-    tokens.push(await hydrateLaunch(launch, creatorCounts.get(launch.creator.toLowerCase()) ?? 1));
-  }
+  const tokens = await Promise.all(
+    launches.slice().reverse().map((launch) => hydrateLaunch(
+      launch,
+      creatorCounts.get(launch.creator.toLowerCase()) ?? 1,
+    )),
+  );
   return { tokens, indexedBlock: indexedBlock.toString(), generatedAt: new Date().toISOString() };
 }
 

@@ -1,7 +1,8 @@
 import "server-only";
 
-import { createPublicClient, http, parseAbiItem, type Address, type Hash } from "viem";
+import { createPublicClient, decodeEventLog, http, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
 import { ARC_TESTNET_FACTORY_INDEXES, arcTestnet } from "@/lib/chains";
+import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
@@ -91,18 +92,53 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
   throw new Error("Arc RPC request failed after retries.");
 }
 
+function loadLaunchLogs(address: Address, fromBlock: bigint, toBlock: bigint) {
+  return withRpcRetry(() => publicClient.getLogs({
+    address,
+    event: tokenLaunchedEvent,
+    fromBlock,
+    toBlock,
+  }));
+}
+
 async function loadFactoryLaunches(indexedBlock: bigint) {
+  try {
+    const logGroups = await Promise.all(ARC_TESTNET_FACTORY_INDEXES.map((factory) => getArcscanLogs({
+      address: factory.address,
+      fromBlock: factory.fromBlock,
+      toBlock: indexedBlock,
+      topic0: toEventSelector(tokenLaunchedEvent),
+    })));
+    const launches = new Map<string, FactoryLaunch>();
+    for (const log of logGroups.flat()) {
+      const decoded = decodeEventLog({
+        abi: [tokenLaunchedEvent],
+        data: log.data,
+        topics: log.topics,
+      });
+      const token = decoded.args.token;
+      launches.set(token.toLowerCase(), {
+        token,
+        curve: decoded.args.curve,
+        creator: decoded.args.creator,
+        name: decoded.args.name,
+        symbol: decoded.args.symbol,
+        launchBlock: log.blockNumber,
+        launchedAt: log.timestamp,
+        transactionHash: log.transactionHash,
+      });
+      state.factoryBlockTimestamps.set(log.blockNumber.toString(), log.timestamp);
+    }
+    return launches;
+  } catch {
+    // The public explorer is an optimization only; verified RPC logs remain the fallback.
+  }
+
   const launches = new Map<string, FactoryLaunch>();
   for (const factory of ARC_TESTNET_FACTORY_INDEXES) {
     for (let fromBlock = factory.fromBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
       const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
-      const logs = await withRpcRetry(() => publicClient.getLogs({
-        address: factory.address,
-        event: tokenLaunchedEvent,
-        fromBlock,
-        toBlock,
-      }));
-      await wait(RPC_REQUEST_GAP_MS);
+      const logs = await loadLaunchLogs(factory.address, fromBlock, toBlock);
       for (const log of logs) {
         const token = log.args.token as Address;
         launches.set(token.toLowerCase(), {
@@ -116,19 +152,19 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
           transactionHash: log.transactionHash as Hash,
         });
       }
+      await wait(RPC_REQUEST_GAP_MS);
     }
   }
-  for (const launch of launches.values()) {
+  await Promise.all([...launches.values()].map(async (launch) => {
     const blockKey = launch.launchBlock.toString();
     let launchedAt = state.factoryBlockTimestamps.get(blockKey);
     if (launchedAt === undefined) {
       const block = await withRpcRetry(() => publicClient.getBlock({ blockNumber: launch.launchBlock }));
       launchedAt = Number(block.timestamp);
       state.factoryBlockTimestamps.set(blockKey, launchedAt);
-      await wait(RPC_REQUEST_GAP_MS);
     }
     launch.launchedAt = launchedAt;
-  }
+  }));
   return launches;
 }
 
@@ -177,22 +213,49 @@ function percentOf(part: bigint, total: bigint) {
 async function loadHolderSnapshot(tokenAddress: Address): Promise<HolderSnapshot> {
   const { launch, indexedBlock } = await getVerifiedFactoryLaunch(tokenAddress);
 
-  const balances = new Map<string, bigint>();
-  for (let fromBlock = launch.launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
-    const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
-    const logs = await withRpcRetry(() => publicClient.getLogs({
+  let explorerLogs;
+  try {
+    explorerLogs = await getArcscanLogs({
       address: launch.token,
-      event: transferEvent,
-      fromBlock,
-      toBlock,
-    }));
-    await wait(RPC_REQUEST_GAP_MS);
-    for (const log of logs) {
-      const from = (log.args.from ?? ZERO_ADDRESS).toLowerCase();
-      const to = (log.args.to ?? ZERO_ADDRESS).toLowerCase();
-      const value = log.args.value ?? 0n;
+      fromBlock: launch.launchBlock,
+      toBlock: indexedBlock,
+      topic0: toEventSelector(transferEvent),
+    });
+  } catch {
+    explorerLogs = null;
+  }
+
+  const balances = new Map<string, bigint>();
+  if (explorerLogs) {
+    for (const log of explorerLogs) {
+      const decoded = decodeEventLog({ abi: [transferEvent], data: log.data, topics: log.topics });
+      const from = decoded.args.from.toLowerCase();
+      const to = decoded.args.to.toLowerCase();
+      const value = decoded.args.value;
       if (from !== ZERO_ADDRESS) balances.set(from, (balances.get(from) ?? 0n) - value);
       if (to !== ZERO_ADDRESS) balances.set(to, (balances.get(to) ?? 0n) + value);
+    }
+  } else {
+    const logRanges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
+    for (let fromBlock = launch.launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+      const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
+      logRanges.push({ fromBlock, toBlock });
+    }
+    for (const { fromBlock, toBlock } of logRanges) {
+      const logs = await withRpcRetry(() => publicClient.getLogs({
+        address: launch.token,
+        event: transferEvent,
+        fromBlock,
+        toBlock,
+      }));
+      for (const log of logs) {
+        const from = (log.args.from ?? ZERO_ADDRESS).toLowerCase();
+        const to = (log.args.to ?? ZERO_ADDRESS).toLowerCase();
+        const value = log.args.value ?? 0n;
+        if (from !== ZERO_ADDRESS) balances.set(from, (balances.get(from) ?? 0n) - value);
+        if (to !== ZERO_ADDRESS) balances.set(to, (balances.get(to) ?? 0n) + value);
+      }
+      await wait(RPC_REQUEST_GAP_MS);
     }
   }
 

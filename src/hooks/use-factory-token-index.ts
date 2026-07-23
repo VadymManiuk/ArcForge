@@ -7,6 +7,7 @@ import type { TokenData } from "@/lib/types";
 
 const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v5";
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
+const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 
 type CachedIndex = { savedAt: number; tokens: TokenData[] };
 type TokenIndexSnapshot = { tokens: TokenData[]; indexedBlock: string; generatedAt: string };
@@ -87,40 +88,53 @@ function applySnapshot(token: TokenData, snapshot: MarketSnapshot, holderSnapsho
 }
 
 async function loadServerSnapshot<T>(path: string): Promise<{ snapshot: T; stale: boolean }> {
-  const response = await fetch(path);
+  const response = await fetch(path, { signal: AbortSignal.timeout(SNAPSHOT_REQUEST_TIMEOUT_MS) });
   const payload = await response.json() as { snapshot?: T; stale?: boolean; error?: string };
   if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Onchain snapshot is unavailable.");
   return { snapshot: payload.snapshot, stale: Boolean(payload.stale) };
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>) {
+  const results: R[] = [];
+  for (let index = 0; index < items.length; index += concurrency) {
+    results.push(...await Promise.all(items.slice(index, index + concurrency).map(worker)));
+  }
+  return results;
 }
 
 async function loadFactoryTokens(
   includeMarketData: boolean,
   forceRefresh: boolean,
   onIndexLoaded?: (tokens: TokenData[], stale: boolean) => void,
+  onMarketLoaded?: (tokens: TokenData[], marketDataError: unknown, stale: boolean) => void,
 ) {
   const indexPath = `/api/onchain/tokens${forceRefresh ? "?refresh=1" : ""}`;
   const indexResult = await loadServerSnapshot<TokenIndexSnapshot>(indexPath);
   if (!includeMarketData) return { tokens: indexResult.snapshot.tokens, marketDataError: null, stale: indexResult.stale };
   onIndexLoaded?.(indexResult.snapshot.tokens, indexResult.stale);
 
-  const tokens: TokenData[] = [];
   let marketDataError: unknown;
-  for (const base of indexResult.snapshot.tokens) {
+  const marketTokens = await mapWithConcurrency(indexResult.snapshot.tokens, 2, async (base) => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
     try {
       const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);
-      let holderSnapshot: HolderSnapshot | null = null;
-      try {
-        holderSnapshot = (await loadServerSnapshot<HolderSnapshot>(`/api/onchain/tokens/${base.address}/holders${refreshQuery}`)).snapshot;
-      } catch {
-        holderSnapshot = null;
-      }
-      tokens.push(applySnapshot(base, marketResult.snapshot, holderSnapshot));
+      return applySnapshot(base, marketResult.snapshot, null);
     } catch (loadError) {
       marketDataError ??= loadError;
-      tokens.push(base);
+      return base;
     }
-  }
+  });
+  onMarketLoaded?.(marketTokens, marketDataError, indexResult.stale);
+
+  const refreshQuery = forceRefresh ? "?refresh=1" : "";
+  const tokens = await mapWithConcurrency(marketTokens, 2, async (token) => {
+    try {
+      const holderResult = await loadServerSnapshot<HolderSnapshot>(`/api/onchain/tokens/${token.address}/holders${refreshQuery}`);
+      return { ...token, holders: holderResult.snapshot.holders };
+    } catch {
+      return token;
+    }
+  });
   return { tokens, marketDataError, stale: indexResult.stale };
 }
 
@@ -136,11 +150,21 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
     setLoading(true);
     setError("");
     try {
-      const result = await loadFactoryTokens(includeMarketData, forceRefresh, (indexedTokens, stale) => {
-        setTokens(indexedTokens);
-        setIsPartial(false);
-        setIsCached(stale);
-      });
+      const result = await loadFactoryTokens(
+        includeMarketData,
+        forceRefresh,
+        (indexedTokens, stale) => {
+          setTokens(indexedTokens);
+          setIsPartial(false);
+          setIsCached(stale);
+        },
+        (marketTokens, marketDataError, stale) => {
+          setTokens(marketTokens);
+          setIsPartial(Boolean(marketDataError));
+          setIsCached(stale);
+          setLoading(false);
+        },
+      );
       setTokens(result.tokens);
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);

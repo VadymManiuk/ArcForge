@@ -6,6 +6,8 @@ const MAX_METADATA_BYTES = 64 * 1024;
 const CACHE_LIMIT = 200;
 const SUCCESS_CACHE_TTL_MS = 60 * 60 * 1_000;
 const FAILURE_CACHE_TTL_MS = 60 * 1_000;
+const PUBLIC_GATEWAY_URL = "https://ipfs.io/ipfs/";
+const GATEWAY_TIMEOUT_MS = 3_000;
 
 export type ResolvedTokenMetadata = {
   description?: string;
@@ -27,21 +29,31 @@ function parseIpfsPath(uri: string) {
   return `${match[1]}${match[2] ?? ""}`;
 }
 
-function gatewayBase() {
+function configuredGatewayBase() {
   const configured = process.env.IPFS_GATEWAY_URL?.trim();
-  if (!configured) return "https://gateway.pinata.cloud/ipfs/";
+  if (!configured) return null;
   try {
     const url = new URL(configured);
-    if (url.protocol !== "https:") return "https://gateway.pinata.cloud/ipfs/";
+    if (url.protocol !== "https:") return null;
     return `${url.toString().replace(/\/+$/, "")}/`;
   } catch {
-    return "https://gateway.pinata.cloud/ipfs/";
+    return null;
   }
 }
 
 export function ipfsGatewayURL(uri: string) {
   const path = parseIpfsPath(uri);
-  return path ? `${gatewayBase()}${path}` : "";
+  return path ? `${PUBLIC_GATEWAY_URL}${path}` : "";
+}
+
+function metadataGatewayURLs(uri: string) {
+  const path = parseIpfsPath(uri);
+  if (!path) return [];
+  const configured = configuredGatewayBase();
+  return [...new Set([
+    `${PUBLIC_GATEWAY_URL}${path}`,
+    configured ? `${configured}${path}` : "",
+  ].filter(Boolean))];
 }
 
 function text(value: unknown, maxLength: number) {
@@ -90,19 +102,21 @@ export async function resolveTokenMetadata(metadataURI: string): Promise<Resolve
     if (Date.now() - cached.cachedAt < ttl) return cached.value;
     cache.delete(metadataURI);
   }
-  const url = ipfsGatewayURL(metadataURI);
-  if (!url) return null;
+  const urls = metadataGatewayURLs(metadataURI);
+  if (urls.length === 0) return null;
 
   try {
-    const response = await fetch(url, {
-      headers: { Accept: "application/json" },
-      redirect: "error",
-      signal: AbortSignal.timeout(6_000),
-    });
-    const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (!response.ok || (contentLength > 0 && contentLength > MAX_METADATA_BYTES)) throw new Error("Invalid metadata response.");
-    const body = await readLimitedBody(response);
-    const payload = JSON.parse(body) as Record<string, unknown>;
+    const payload = await Promise.any(urls.map(async (url) => {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        redirect: "error",
+        signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
+      });
+      const contentLength = Number(response.headers.get("content-length") ?? 0);
+      if (!response.ok || (contentLength > 0 && contentLength > MAX_METADATA_BYTES)) throw new Error("Invalid metadata response.");
+      const body = await readLimitedBody(response);
+      return JSON.parse(body) as Record<string, unknown>;
+    }));
     const properties = payload.properties && typeof payload.properties === "object"
       ? payload.properties as Record<string, unknown>
       : {};

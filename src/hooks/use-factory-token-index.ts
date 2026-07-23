@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
+import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import type { TokenData } from "@/lib/types";
 
 const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v5";
@@ -110,7 +112,11 @@ async function loadFactoryTokens(
   onMarketLoaded?: (tokens: TokenData[], marketDataError: unknown, stale: boolean) => void,
 ) {
   const indexPath = `/api/onchain/tokens${forceRefresh ? "?refresh=1" : ""}`;
-  const indexResult = await loadServerSnapshot<TokenIndexSnapshot>(indexPath);
+  const indexResult = await Promise.any([
+    loadClientTokenIndex((snapshot) => onIndexLoaded?.(snapshot.tokens, false))
+      .then((snapshot) => ({ snapshot, stale: false })),
+    loadServerSnapshot<TokenIndexSnapshot>(indexPath),
+  ]);
   if (!includeMarketData) return { tokens: indexResult.snapshot.tokens, marketDataError: null, stale: indexResult.stale };
   onIndexLoaded?.(indexResult.snapshot.tokens, indexResult.stale);
 
@@ -145,7 +151,7 @@ async function loadFactoryTokens(
 }
 
 export function useFactoryTokenIndex({ includeMarketData = true, allowCache = true }: { includeMarketData?: boolean; allowCache?: boolean } = {}) {
-  const [tokens, setTokens] = useState<TokenData[]>([]);
+  const [tokens, setTokens] = useState<TokenData[]>(getVerifiedBootstrapTokens);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isCached, setIsCached] = useState(false);

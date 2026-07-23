@@ -117,7 +117,7 @@ export function TokenTable({
         return <Link key={token.address} href={`/tokens/${token.address}`} className="min-w-0 rounded-xl border border-line bg-black/15 p-4 transition active:border-cyan/40">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><SourceBadge onchainState={onchainState}/></div></div></div>
-            <RiskBadge score={token.riskScore}/>
+            {awaitingLive ? <span className="text-slate-600">—</span> : <RiskBadge score={token.riskScore}/>}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-xs sm:grid-cols-4">
             <MobileMetric label="Created" value={createdLabel(token)}/>
@@ -158,7 +158,7 @@ export function TokenTable({
             <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>
             <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>
             <td className="pr-5"><div className="mb-1.5 flex justify-between text-[10px] text-slate-500"><span>{awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></td>
-            <td><RiskBadge score={token.riskScore}/></td>
+            <td>{awaitingLive ? <span className="text-slate-600">—</span> : <RiskBadge score={token.riskScore}/>}</td>
             <td className="pr-4"><Link href={`/tokens/${token.address}`} className="font-semibold text-cyan">Trade →</Link></td>
           </tr>;
         })}</tbody>

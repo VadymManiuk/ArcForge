@@ -79,7 +79,7 @@ export async function getArcscanLogs({
 }: {
   address: Address;
   fromBlock: bigint;
-  toBlock: bigint;
+  toBlock: bigint | "latest";
   topic0?: Hash;
 }) {
   const url = new URL("/api", EXPLORER_URL);
@@ -108,7 +108,7 @@ export async function getArcscanLogs({
   const expectedAddress = address.toLowerCase();
   if (logs.some((log) => log.address.toLowerCase() !== expectedAddress
     || log.blockNumber < fromBlock
-    || log.blockNumber > toBlock
+    || (toBlock !== "latest" && log.blockNumber > toBlock)
     || (topic0 && log.topics[0].toLowerCase() !== topic0.toLowerCase()))) {
     throw new Error("Arcscan returned a log outside the requested filter.");
   }

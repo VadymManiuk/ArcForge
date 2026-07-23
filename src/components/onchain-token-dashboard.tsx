@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { AtSign, ExternalLink, Globe, RefreshCw, ShieldCheck } from "lucide-react";
 import { TokenChart } from "@/components/token-chart";
-import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, StatCard, WarningBox } from "@/components/ui";
+import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, RiskBadge, WarningBox } from "@/components/ui";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
+import { EXPLORER_URL } from "@/lib/chains";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
@@ -11,6 +13,7 @@ import type { TokenData } from "@/lib/types";
 import { money, number } from "@/lib/utils";
 
 export type OnchainTokenSnapshot = MarketSnapshot;
+type TerminalTab = "Trades" | "Holders" | "Curve" | "Info";
 
 function createIndexedFallback(token: TokenData): OnchainTokenSnapshot {
   const totalSupply = token.totalSupply ?? 1_000_000_000;
@@ -88,6 +91,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
 export function OnchainTokenDashboard({ token }: { token: TokenData }) {
   const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token);
+  const [activeTab, setActiveTab] = useState<TerminalTab>("Trades");
   const [holderSnapshot, setHolderSnapshot] = useState<HolderSnapshot | null>(null);
   const [holderLoading, setHolderLoading] = useState(true);
   const [holderError, setHolderError] = useState("");
@@ -125,39 +129,119 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
     : (token.virtualUsdcReserve ?? 0) + snapshot.raisedUsdc;
   const remainingToGraduation = Math.max(0, token.targetUSDC - snapshot.raisedUsdc);
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
-  return <>
-    <Panel className="p-5">
-      <div className="mb-3 flex justify-end gap-2"><Badge tone="neutral">Block {snapshot.indexedBlock}</Badge><Badge tone={loading || stale ? "neutral" : "good"}>{loading ? "Updating…" : stale ? "Last confirmed" : "Live indexed"}</Badge></div>
-      <TokenChart data={snapshot.chart}/>
-      {error && <WarningBox>{error}</WarningBox>}
-    </Panel>
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-      <StatCard label="Market cap" value={money(snapshot.marketCap, true)} detail="Current curve price × supply"/>
-      <StatCard label="Real liquidity" value={money(snapshot.raisedUsdc)} detail={`${money(effectiveQuoteDepth)} effective quote depth`}/>
-      <StatCard label="Onchain volume" value={money(snapshot.volume)} detail={`${snapshot.trades.length} confirmed trades`}/>
-      <StatCard label="Holders" value={holderLoading && !holderSnapshot ? "—" : holderSnapshot ? number(holderSnapshot.holders) : "Unavailable"} detail={holderSnapshot ? `Transfer events · block ${holderSnapshot.indexedBlock}` : "Factory-validated index"}/>
-      <StatCard label="Since launch" value={`${snapshot.priceChange >= 0 ? "+" : ""}${snapshot.priceChange.toFixed(2)}%`} className={snapshot.priceChange >= 0 ? "text-emerald-300" : "text-rose-300"}/>
+  const tabs: Array<{ label: TerminalTab; count?: string }> = [
+    { label: "Trades", count: String(snapshot.trades.length) },
+    { label: "Holders", count: holderSnapshot ? number(holderSnapshot.holders) : undefined },
+    { label: "Curve" },
+    { label: "Info" },
+  ];
+
+  return <Panel className="overflow-hidden rounded-xl shadow-none">
+    <div className="grid grid-cols-2 border-b border-line bg-black/10 sm:grid-cols-3 xl:grid-cols-6">
+      <TerminalMetric label="Price" value={tokenPrice(snapshot.price)} />
+      <TerminalMetric label="Market cap" value={money(snapshot.marketCap, true)} />
+      <TerminalMetric label="Liquidity" value={money(snapshot.raisedUsdc, true)} detail="Real USDC" />
+      <TerminalMetric label="Volume" value={money(snapshot.volume, true)} detail="All onchain" />
+      <TerminalMetric label="Holders" value={holderSnapshot ? number(holderSnapshot.holders) : holderLoading ? "…" : "—"} />
+      <TerminalMetric
+        label="Since launch"
+        value={`${snapshot.priceChange >= 0 ? "+" : ""}${snapshot.priceChange.toFixed(2)}%`}
+        tone={snapshot.priceChange >= 0 ? "good" : "bad"}
+      />
     </div>
-    <Panel className="p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><h2 className="mt-2 text-lg font-semibold text-white">Indexed from Transfer events</h2></div><div className="flex gap-2"><Badge tone={holderLoading || holderStale ? "neutral" : "good"}>{holderLoading ? "Updating…" : holderStale ? "Last confirmed" : "Live holders"}</Badge><Button variant="ghost" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
-      {holderSnapshot && <div className="mt-5 grid gap-5 md:grid-cols-4">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Trading curve", holderSnapshot.curvePercent], ["Permanent lock", holderSnapshot.permanentLiquidityLockPercent]].map(([label, value]) => <div key={String(label)}><div className="mb-2 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-300">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
-      {holderError && <WarningBox>{holderError}</WarningBox>}
-    </Panel>
-    <Panel className="p-5">
-      <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">{snapshot.graduated && permanentLiquidityMode ? "Permanent liquidity" : "Bonding curve"}</p><h2 className="mt-2 text-xl font-semibold text-white">{snapshot.graduated ? permanentLiquidityMode ? "Graduated · real-reserve AMM active" : "Graduated" : `${progressLabel} toward graduation`}</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">Real USDC liquidity</p></div></div>
-      <div className="my-5"><Progress value={snapshot.progress}/></div>
-      <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-5"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Curve inventory" value={number(snapshot.tokenReserve)}/><Metric label="Effective depth" value={money(effectiveQuoteDepth)}/><Metric label="Remaining" value={money(remainingToGraduation)}/><Metric label="After graduation" value={permanentLiquidityMode ? "Permanent AMM" : "Legacy curve"}/></div>
-      <p className="mt-5 border-t border-line pt-4 text-[11px] leading-5 text-slate-500">{permanentLiquidityMode
-        ? "At 100%, virtual liquidity is removed without changing the spot price. Price-matched tokens and all real USDC remain in the curve as permanent two-sided AMM liquidity; buys and sells continue."
-        : "Legacy curve: real USDC backs sells, while virtual USDC shapes pricing. Buying closes at the configured threshold because this deployment predates permanent-liquidity graduation."}</p>
-    </Panel>
-    <Panel className="overflow-hidden">
-      <div className="flex items-center justify-between border-b border-line p-5"><div><p className="eyebrow">Event activity</p><h2 className="mt-2 text-lg font-semibold">Recent onchain trades</h2></div><Button variant="ghost" disabled={loading} onClick={() => void refresh(true)}>Refresh</Button></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-5 py-3">Block</th><th>Type</th><th>Wallet</th><th>USDC</th><th>Tokens</th><th>Price</th><th>Transaction</th></tr></thead><tbody>{snapshot.trades.map((trade) => <tr key={trade.txHash} className="border-b border-line/60 last:border-0"><td className="px-5 py-3 text-slate-500">{trade.time}</td><td><Badge tone={trade.type === "Buy" ? "good" : "bad"}>{trade.type}</Badge></td><td><AddressPill address={trade.wallet}/></td><td className="text-slate-300">{money(trade.usdc)}</td><td className="text-slate-300">{number(trade.tokens)}</td><td className="text-slate-400">{money(trade.price)}</td><td><ArcscanLink hash={trade.txHash}/></td></tr>)}{snapshot.trades.length === 0 && <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">No TokenBought or TokenSold events found.</td></tr>}</tbody></table></div>
-    </Panel>
-  </>;
+
+    <div className="border-b border-line p-3 sm:p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Badge tone={loading || stale ? "neutral" : "good"}>{loading ? "Updating" : stale ? "Last confirmed" : "Live indexed"}</Badge>
+          <span className="font-mono text-[9px] text-slate-600">Block {snapshot.indexedBlock}</span>
+        </div>
+        <Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={loading} onClick={() => void refresh(true)}>
+          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />Refresh
+        </Button>
+      </div>
+      <TokenChart data={snapshot.chart}/>
+      {error && <div className="mt-3"><WarningBox>{error}</WarningBox></div>}
+    </div>
+
+    <div className="flex items-center gap-1 overflow-x-auto border-b border-line bg-black/10 px-2">
+      {tabs.map((tab) => <button
+        key={tab.label}
+        type="button"
+        onClick={() => setActiveTab(tab.label)}
+        className={`relative flex h-11 shrink-0 items-center gap-2 px-3 text-xs font-medium transition ${activeTab === tab.label ? "text-white" : "text-slate-500 hover:text-slate-300"}`}
+      >
+        {tab.label}
+        {tab.count && <span className="font-mono text-[9px] text-slate-600">{tab.count}</span>}
+        {activeTab === tab.label && <span className="absolute inset-x-3 bottom-0 h-px bg-cyan" />}
+      </button>)}
+    </div>
+
+    <div className="min-h-[260px]">
+      {activeTab === "Trades" && <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left text-xs">
+          <thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">Block</th><th>Type</th><th>Wallet</th><th>USDC</th><th>Tokens</th><th>Price</th><th>Transaction</th></tr></thead>
+          <tbody>{snapshot.trades.map((trade) => <tr key={trade.txHash} className="border-b border-line/60 last:border-0 hover:bg-white/[.02]"><td className="px-4 py-3 text-slate-500">{trade.time}</td><td><Badge tone={trade.type === "Buy" ? "good" : "bad"}>{trade.type}</Badge></td><td><AddressPill address={trade.wallet}/></td><td className={trade.type === "Buy" ? "text-emerald-300" : "text-rose-300"}>{money(trade.usdc)}</td><td className="text-slate-300">{number(trade.tokens)}</td><td className="text-slate-400">{tokenPrice(trade.price)}</td><td><ArcscanLink hash={trade.txHash}/></td></tr>)}
+          {snapshot.trades.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500">No confirmed trades yet. The first buy will appear here onchain.</td></tr>}</tbody>
+        </table>
+      </div>}
+
+      {activeTab === "Holders" && <div className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><p className="mt-2 text-sm text-slate-400">Calculated from confirmed ERC-20 Transfer events.</p></div><div className="flex items-center gap-2"><Badge tone={holderLoading || holderStale ? "neutral" : "good"}>{holderLoading ? "Updating" : holderStale ? "Last confirmed" : "Live holders"}</Badge><Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
+        {holderSnapshot && <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Trading curve", holderSnapshot.curvePercent], ["Permanent lock", holderSnapshot.permanentLiquidityLockPercent]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-line bg-black/15 p-4"><div className="mb-3 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-200">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
+        {holderError && <div className="mt-4"><WarningBox>{holderError}</WarningBox></div>}
+      </div>}
+
+      {activeTab === "Curve" && <div className="p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">{snapshot.graduated && permanentLiquidityMode ? "Permanent liquidity" : "Bonding curve"}</p><h2 className="mt-2 text-lg font-semibold text-white">{snapshot.graduated ? permanentLiquidityMode ? "Graduated · real-reserve AMM active" : "Graduated" : `${progressLabel} toward graduation`}</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">Real USDC liquidity</p></div></div>
+        <div className="my-5"><Progress value={snapshot.progress}/></div>
+        <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-5"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Curve inventory" value={number(snapshot.tokenReserve)}/><Metric label="Effective depth" value={money(effectiveQuoteDepth)}/><Metric label="Remaining" value={money(remainingToGraduation)}/><Metric label="After graduation" value={permanentLiquidityMode ? "Permanent AMM" : "Legacy curve"}/></div>
+        <p className="mt-5 border-t border-line pt-4 text-[11px] leading-5 text-slate-500">{permanentLiquidityMode
+          ? "At 100%, virtual liquidity is removed without changing the spot price. Price-matched tokens and all real USDC remain in the curve as permanent two-sided AMM liquidity; buys and sells continue."
+          : "Legacy curve: real USDC backs sells, while virtual USDC shapes pricing. Buying closes at the configured threshold because this deployment predates permanent-liquidity graduation."}</p>
+      </div>}
+
+      {activeTab === "Info" && <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
+          <p className="eyebrow">About {token.ticker}</p>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">{token.description || "No token description was published in the immutable launch metadata."}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {token.socials.website && <InfoLink href={token.socials.website} icon={<Globe className="size-3.5"/>} label="Website"/>}
+            {token.socials.x && <InfoLink href={token.socials.x} icon={<AtSign className="size-3.5"/>} label="X / Twitter"/>}
+            <InfoLink href={`${EXPLORER_URL}/address/${token.address}`} icon={<ExternalLink className="size-3.5"/>} label="Arcscan"/>
+          </div>
+          <div className="mt-6 flex flex-wrap gap-2">{token.riskLabels.map((label) => <Badge key={label} tone={label.includes("high") || label.includes("missing") ? "bad" : "good"}><ShieldCheck className="mr-1 size-3"/>{label.replaceAll("_", " ")}</Badge>)}</div>
+          <p className="mt-4 text-[11px] leading-5 text-slate-500">Risk labels describe visible onchain and metadata signals, not a guarantee of safety.</p>
+        </div>
+        <div className="rounded-xl border border-line bg-black/15 p-4">
+          <div className="flex items-center justify-between"><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">Risk score</p><RiskBadge score={token.riskScore}/></div>
+          <dl className="mt-5 grid gap-3 text-xs"><InfoRow label="Token" value={<AddressPill address={token.address}/>}/>{token.curveAddress && <InfoRow label="Curve" value={<AddressPill address={token.curveAddress}/>}/>}<InfoRow label="Creator" value={<AddressPill address={token.creator}/>}/><InfoRow label="Launch block" value={String(token.launchBlock ?? "—")}/></dl>
+        </div>
+      </div>}
+    </div>
+  </Panel>;
+}
+
+function tokenPrice(value: number) {
+  if (!Number.isFinite(value)) return "—";
+  if (value === 0) return "$0";
+  if (value < 0.000001) return `$${value.toFixed(10)}`;
+  if (value < 0.01) return `$${value.toFixed(8)}`;
+  return money(value);
+}
+
+function TerminalMetric({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "good" | "bad" }) {
+  return <div className="min-w-0 border-b border-r border-line px-3 py-3 last:border-r-0 sm:px-4 xl:border-b-0"><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">{label}</p><p className={`mt-1 truncate text-sm font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-white"}`}>{value}</p>{detail && <p className="mt-0.5 truncate text-[9px] text-slate-600">{detail}</p>}</div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div><p className="text-slate-600">{label}</p><p className="mt-1 font-medium text-slate-200">{value}</p></div>;
+}
+
+function InfoLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
+  return <a href={href} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white/[.025] px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">{icon}{label}</a>;
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">{label}</dt><dd className="text-right text-slate-300">{value}</dd></div>;
 }

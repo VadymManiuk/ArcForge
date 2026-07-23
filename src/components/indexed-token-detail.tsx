@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AtSign, ExternalLink, Globe, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
 import { AddressPill, Badge, Button, Panel, RiskBadge, TokenIcon, WarningBox } from "@/components/ui";
@@ -28,52 +28,34 @@ export function IndexedTokenDetail({ address }: { address: string }) {
     </div>;
   }
 
-  return <div className="container-shell py-8">
-    <div className="flex flex-col justify-between gap-5 border-b border-line pb-7 lg:flex-row lg:items-center">
-      <div className="flex items-start gap-4">
-        <TokenIcon label={token.icon} image={token.image} className="size-14 rounded-2xl text-sm" />
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold text-white">{token.name}</h1>
-            <span className="font-mono text-sm text-slate-500">{token.ticker}</span>
+  return <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-4">
+    <div className="mb-3 flex flex-col justify-between gap-4 rounded-xl border border-line bg-panel px-3 py-3 sm:px-4 lg:flex-row lg:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        <Link href="/tokens" aria-label="Back to markets" className="grid size-9 shrink-0 place-items-center rounded-lg border border-line text-slate-500 transition hover:text-white"><ArrowLeft className="size-4"/></Link>
+        <TokenIcon label={token.icon} image={token.image} className="size-11 rounded-xl text-sm" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-lg font-semibold text-white sm:text-xl">{token.name}</h1>
+            <span className="font-mono text-xs text-slate-500">{token.ticker}</span>
             <Badge tone="cyan">{token.status}</Badge>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-            <AddressPill address={token.address} />
-            <span>Launched {utcDateTime(token.launchedAt)}</span>
-            <span>by <Link href={`/creators/${token.creator}`} className="text-slate-300 hover:text-cyan">{shortAddress(token.creator)}</Link></span>
             <Badge tone="good">Onchain</Badge>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
+            <AddressPill address={token.address} />
+            <span>{utcDateTime(token.launchedAt)}</span>
+            <span>Creator <Link href={`/creators/${token.creator}`} className="text-slate-300 hover:text-cyan">{shortAddress(token.creator)}</Link></span>
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 pl-12 lg:pl-0">
         <RiskBadge score={token.riskScore} />
-        <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-xl border border-line px-3 text-xs text-slate-300">Arcscan <ExternalLink className="size-3" /></a>
+        <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-2 rounded-lg border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-3" /></a>
       </div>
     </div>
 
-    <div className="mt-6 grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="grid min-w-0 gap-5">
-        {(token.description || token.socials.website || token.socials.x) && <Panel className="p-5">
-          <p className="eyebrow">About</p>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">{token.description}</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {token.socials.website && <SocialLink href={token.socials.website} icon={<Globe className="size-3.5" />} label="Website" />}
-            {token.socials.x && <SocialLink href={token.socials.x} icon={<AtSign className="size-3.5" />} label="X / Twitter" />}
-          </div>
-        </Panel>}
-        <OnchainTokenDashboard token={token} />
-        <Panel className="p-5">
-          <div className="flex items-center justify-between gap-4"><p className="eyebrow">Risk profile</p><RiskBadge score={token.riskScore} /></div>
-          <div className="mt-5 flex flex-wrap gap-2">{token.riskLabels.map((label) => <Badge key={label} tone={label.includes("high") || label.includes("missing") ? "bad" : "good"}><ShieldCheck className="mr-1 size-3" />{label.replaceAll("_", " ")}</Badge>)}</div>
-          <p className="mt-4 text-xs leading-5 text-slate-500">Risk labels describe visible signals, not a guarantee of safety.</p>
-        </Panel>
-      </div>
-      <aside className="order-first h-fit xl:order-none xl:sticky xl:top-24"><BuySellPanel token={token} /></aside>
+    <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="min-w-0"><OnchainTokenDashboard token={token} /></div>
+      <aside className="h-fit xl:sticky xl:top-[100px]"><BuySellPanel token={token} /></aside>
     </div>
   </div>;
-}
-
-function SocialLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
-  return <a href={href} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-xl border border-line bg-white/[.025] px-3 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white">{icon}{label}<ExternalLink className="size-3 text-slate-600" /></a>;
 }

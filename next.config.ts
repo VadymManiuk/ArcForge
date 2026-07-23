@@ -11,7 +11,7 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' https://rpc.testnet.arc.network${isDevelopment ? " ws:" : ""}`,
+  `connect-src 'self' https://rpc.testnet.arc.network https://testnet.arcscan.app${isDevelopment ? " ws:" : ""}`,
   "worker-src 'self' blob:",
   ...(!isDevelopment ? ["upgrade-insecure-requests"] : []),
 ].join("; ");

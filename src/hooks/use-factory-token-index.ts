@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
+import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData } from "@/lib/types";
 
@@ -117,11 +118,16 @@ async function loadFactoryTokens(
   const marketTokens = await mapWithConcurrency(indexResult.snapshot.tokens, 2, async (base) => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
     try {
-      const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);
-      return applySnapshot(base, marketResult.snapshot, null);
+      const snapshot = await loadIndexedMarketSnapshot(base, BigInt(indexResult.snapshot.indexedBlock));
+      return applySnapshot(base, snapshot, null);
     } catch (loadError) {
-      marketDataError ??= loadError;
-      return base;
+      try {
+        const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);
+        return applySnapshot(base, marketResult.snapshot, null);
+      } catch (fallbackError) {
+        marketDataError ??= fallbackError ?? loadError;
+        return base;
+      }
     }
   });
   onMarketLoaded?.(marketTokens, marketDataError, indexResult.stale);

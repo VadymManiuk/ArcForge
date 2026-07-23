@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { TokenChart } from "@/components/token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, StatCard, WarningBox } from "@/components/ui";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
+import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData } from "@/lib/types";
 import { money, number } from "@/lib/utils";
@@ -49,12 +50,19 @@ export function useOnchainTokenSnapshot(token: TokenData) {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/onchain/tokens/${token.address}/market${forceRefresh ? "?refresh=1" : ""}`);
-      const payload = await response.json() as { snapshot?: OnchainTokenSnapshot; stale?: boolean; error?: string };
-      if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Market data is unavailable.");
-      setSnapshot(payload.snapshot);
-      setStale(Boolean(payload.stale));
-      if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
+      try {
+        setSnapshot(await loadIndexedMarketSnapshot(token));
+        setStale(false);
+      } catch {
+        const response = await fetch(`/api/onchain/tokens/${token.address}/market${forceRefresh ? "?refresh=1" : ""}`, {
+          signal: AbortSignal.timeout(12_000),
+        });
+        const payload = await response.json() as { snapshot?: OnchainTokenSnapshot; stale?: boolean; error?: string };
+        if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Market data is unavailable.");
+        setSnapshot(payload.snapshot);
+        setStale(Boolean(payload.stale));
+        if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
+      }
     } catch (loadError) {
       setStale(true);
       const message = loadError instanceof Error ? loadError.message : "Live market data could not be loaded.";
@@ -62,7 +70,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
     } finally {
       setLoading(false);
     }
-  }, [token.address]);
+  }, [token]);
 
   useEffect(() => {
     void refresh();

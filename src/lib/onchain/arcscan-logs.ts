@@ -1,5 +1,3 @@
-import "server-only";
-
 import { isAddress, isHash, type Address, type Hash, type Hex } from "viem";
 import { EXPLORER_URL } from "@/lib/chains";
 

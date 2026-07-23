@@ -16,6 +16,7 @@ const MAX_TOKEN_CACHES = 50;
 const RPC_REQUEST_GAP_MS = 220;
 
 export type FactoryLaunch = {
+  factory: Address;
   token: Address;
   curve: Address;
   creator: Address;
@@ -34,6 +35,13 @@ export type HolderSnapshot = {
   topTenExcludingCurvePercent: number;
   indexedBlock: string;
   generatedAt: string;
+};
+
+export type HolderLaunchHint = {
+  factory: Address;
+  curve: Address;
+  creator: Address;
+  launchBlock: bigint;
 };
 
 type HolderCacheEntry = {
@@ -115,24 +123,27 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
       topic0: toEventSelector(tokenLaunchedEvent),
     })));
     const launches = new Map<string, FactoryLaunch>();
-    for (const log of logGroups.flat()) {
-      const decoded = decodeEventLog({
-        abi: [tokenLaunchedEvent],
-        data: log.data,
-        topics: log.topics,
-      });
-      const token = decoded.args.token;
-      launches.set(token.toLowerCase(), {
-        token,
-        curve: decoded.args.curve,
-        creator: decoded.args.creator,
-        name: decoded.args.name,
-        symbol: decoded.args.symbol,
-        launchBlock: log.blockNumber,
-        launchedAt: log.timestamp,
-        transactionHash: log.transactionHash,
-      });
-      state.factoryBlockTimestamps.set(log.blockNumber.toString(), log.timestamp);
+    for (const [factoryIndex, logs] of logGroups.entries()) {
+      for (const log of logs) {
+        const decoded = decodeEventLog({
+          abi: [tokenLaunchedEvent],
+          data: log.data,
+          topics: log.topics,
+        });
+        const token = decoded.args.token;
+        launches.set(token.toLowerCase(), {
+          factory: ARC_TESTNET_FACTORY_INDEXES[factoryIndex].address,
+          token,
+          curve: decoded.args.curve,
+          creator: decoded.args.creator,
+          name: decoded.args.name,
+          symbol: decoded.args.symbol,
+          launchBlock: log.blockNumber,
+          launchedAt: log.timestamp,
+          transactionHash: log.transactionHash,
+        });
+        state.factoryBlockTimestamps.set(log.blockNumber.toString(), log.timestamp);
+      }
     }
     return launches;
   } catch {
@@ -147,6 +158,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
       for (const log of logs) {
         const token = log.args.token as Address;
         launches.set(token.toLowerCase(), {
+          factory: factory.address,
           token,
           curve: log.args.curve as Address,
           creator: log.args.creator as Address,
@@ -216,13 +228,66 @@ export async function getFactoryLaunchIndex(forceRefresh = false) {
   return { launches: [...launches.values()], indexedBlock };
 }
 
+async function verifyLaunchHint(tokenAddress: Address, hint: HolderLaunchHint) {
+  const knownFactory = ARC_TESTNET_FACTORY_INDEXES.some(
+    (factory) => factory.address.toLowerCase() === hint.factory.toLowerCase() && hint.launchBlock >= factory.fromBlock,
+  );
+  if (!knownFactory) throw new FactoryTokenNotFoundError("The supplied launch factory is not configured.");
+
+  let logs;
+  try {
+    logs = await getArcscanLogs({
+      address: hint.factory,
+      fromBlock: hint.launchBlock,
+      toBlock: hint.launchBlock,
+      topic0: toEventSelector(tokenLaunchedEvent),
+    });
+  } catch {
+    logs = await loadLaunchLogs(hint.factory, hint.launchBlock, hint.launchBlock);
+  }
+  for (const log of logs) {
+    const decoded = "args" in log
+      ? {
+          token: log.args.token as Address,
+          curve: log.args.curve as Address,
+          creator: log.args.creator as Address,
+          name: log.args.name ?? "Factory token",
+          symbol: log.args.symbol ?? "TOKEN",
+        }
+      : decodeEventLog({ abi: [tokenLaunchedEvent], data: log.data, topics: log.topics }).args;
+    if (decoded.token.toLowerCase() !== tokenAddress.toLowerCase()
+      || decoded.curve.toLowerCase() !== hint.curve.toLowerCase()
+      || decoded.creator.toLowerCase() !== hint.creator.toLowerCase()) continue;
+    const launchedAt = "timestamp" in log
+      ? log.timestamp
+      : Number((await publicClient.getBlock({ blockNumber: hint.launchBlock })).timestamp);
+    return {
+      launch: {
+        factory: hint.factory,
+        token: decoded.token,
+        curve: decoded.curve,
+        creator: decoded.creator,
+        name: decoded.name,
+        symbol: decoded.symbol,
+        launchBlock: hint.launchBlock,
+        launchedAt,
+        transactionHash: log.transactionHash as Hash,
+      } satisfies FactoryLaunch,
+      indexedBlock: await withRpcRetry(() => publicClient.getBlockNumber(), 2),
+    };
+  }
+  throw new FactoryTokenNotFoundError("The supplied token was not emitted by the configured Factory at its launch block.");
+}
+
 function percentOf(part: bigint, total: bigint) {
   if (total === 0n) return 0;
   return Number(part * 1_000_000n / total) / 10_000;
 }
 
-async function loadHolderSnapshot(tokenAddress: Address): Promise<HolderSnapshot> {
-  const { launch, indexedBlock } = await getVerifiedFactoryLaunch(tokenAddress);
+async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint): Promise<HolderSnapshot> {
+  const { launch, indexedBlock } = hint
+    ? await verifyLaunchHint(tokenAddress, hint)
+    : await getVerifiedFactoryLaunch(tokenAddress);
 
   let explorerLogs;
   try {
@@ -308,7 +373,7 @@ function getTokenCache(tokenAddress: Address) {
   return entry;
 }
 
-export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = false) {
+export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = false, hint?: HolderLaunchHint) {
   const cache = getTokenCache(tokenAddress);
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < HOLDER_CACHE_TTL_MS;
@@ -321,7 +386,7 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
 
   if (!cache.pending) {
     cache.lastAttemptAt = now;
-    cache.pending = loadHolderSnapshot(tokenAddress)
+    cache.pending = loadHolderSnapshot(tokenAddress, hint)
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();

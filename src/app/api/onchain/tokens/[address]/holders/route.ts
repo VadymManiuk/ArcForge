@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAddress, isAddress } from "viem";
-import { FactoryTokenNotFoundError, getHolderSnapshot, isHolderRpcError } from "@/lib/onchain/holder-snapshot";
+import { FactoryTokenNotFoundError, getHolderSnapshot, isHolderRpcError, type HolderLaunchHint } from "@/lib/onchain/holder-snapshot";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,7 +12,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (!isAddress(address)) return NextResponse.json({ error: "Invalid token address." }, { status: 400 });
   try {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
-    const result = await getHolderSnapshot(getAddress(address), forceRefresh);
+    const factory = request.nextUrl.searchParams.get("factory");
+    const curve = request.nextUrl.searchParams.get("curve");
+    const creator = request.nextUrl.searchParams.get("creator");
+    const launchBlock = request.nextUrl.searchParams.get("launchBlock");
+    const hint: HolderLaunchHint | undefined = factory && curve && creator && launchBlock
+      && isAddress(factory) && isAddress(curve) && isAddress(creator) && /^\d+$/.test(launchBlock)
+      ? {
+          factory: getAddress(factory),
+          curve: getAddress(curve),
+          creator: getAddress(creator),
+          launchBlock: BigInt(launchBlock),
+        }
+      : undefined;
+    const result = await getHolderSnapshot(getAddress(address), forceRefresh, hint);
     return NextResponse.json(result, {
       headers: { "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=600" },
     });
@@ -23,7 +36,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       error: isHolderRpcError(error)
         ? "Arc Testnet RPC is temporarily rate-limited. Retry in a moment."
-        : "Holder data could not be indexed from Arc Testnet.",
+        : "Holder data could not be loaded from confirmed Arc Testnet transfers.",
     }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

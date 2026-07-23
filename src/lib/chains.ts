@@ -61,4 +61,12 @@ export const ARC_TESTNET_FACTORY_INDEXES = [
   ),
 ] as const;
 
+export function factoryForLaunchBlock(launchBlock?: number) {
+  if (launchBlock === undefined) return ARC_TESTNET_CONTRACTS.factory;
+  const block = BigInt(launchBlock);
+  if (block >= ARC_TESTNET_V3_FACTORY_BLOCK) return ARC_TESTNET_V3_FACTORY;
+  if (block >= ARC_TESTNET_V2_FACTORY_BLOCK) return ARC_TESTNET_V2_FACTORY;
+  return ARC_TESTNET_LEGACY_FACTORY;
+}
+
 export const ARC_TESTNET_USDC = ARC_TESTNET_CONTRACTS.usdc;

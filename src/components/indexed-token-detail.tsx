@@ -4,23 +4,25 @@ import Link from "next/link";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
+import { TokenInfoPanel } from "@/components/token-info-panel";
 import { AddressPill, Badge, Button, Panel, RiskBadge, TokenIcon, WarningBox } from "@/components/ui";
+import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { EXPLORER_URL } from "@/lib/chains";
 import { shortAddress, utcDateTime } from "@/lib/utils";
 
 export function IndexedTokenDetail({ address }: { address: string }) {
-  const { tokens, loading, error, refresh } = useFactoryTokenIndex({ includeMarketData: false, allowCache: false });
+  const { tokens, loading, error, refresh } = useFactoryTokenIndex({ includeMarketData: false, allowCache: true });
   const token = tokens.find((item) => item.address.toLowerCase() === address.toLowerCase());
 
   if (!token) {
     return <div className="container-shell py-12">
       <Panel className="p-6">
-        <p className="eyebrow">Factory index</p>
-        <h1 className="mt-3 text-2xl font-semibold text-white">{loading ? "Indexing Arc Testnet launch…" : "Launch not found"}</h1>
-        <p className="mt-3 text-sm text-slate-400">{error || (loading ? "Reading TokenLaunched and curve events without a simulated fallback." : "This address was not emitted by the configured ArcOrigin factory.")}</p>
+        <p className="eyebrow">Verified launch</p>
+        <h1 className="mt-3 text-2xl font-semibold text-white">{loading ? "Loading token…" : "Launch not found"}</h1>
+        <p className="mt-3 text-sm text-slate-400">{error || (loading ? "Opening the cached token profile while confirmed data refreshes in the background." : "This address was not emitted by the configured ArcOrigin factory.")}</p>
         <div className="mt-5 flex gap-3">
-          {!loading && <Button onClick={() => void refresh()}>Retry index</Button>}
+          {!loading && <Button onClick={() => void refresh()}>Retry</Button>}
           <Link href="/tokens" className="inline-flex h-10 items-center rounded-xl border border-line px-4 text-sm text-slate-300">Back to markets</Link>
         </div>
         {error && <div className="mt-4"><WarningBox>{error}</WarningBox></div>}
@@ -48,6 +50,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
         </div>
       </div>
       <div className="flex items-center gap-2 pl-12 lg:pl-0">
+        <WatchlistButton address={token.address} />
         <RiskBadge score={token.riskScore} />
         <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-2 rounded-lg border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-3" /></a>
       </div>
@@ -55,7 +58,10 @@ export function IndexedTokenDetail({ address }: { address: string }) {
 
     <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="min-w-0"><OnchainTokenDashboard token={token} /></div>
-      <aside className="h-fit xl:sticky xl:top-[100px]"><BuySellPanel token={token} /></aside>
+      <aside className="grid h-fit gap-3 xl:sticky xl:top-[100px]">
+        <BuySellPanel token={token} />
+        <TokenInfoPanel token={token} />
+      </aside>
     </div>
   </div>;
 }

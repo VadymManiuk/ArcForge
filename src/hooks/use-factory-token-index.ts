@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
-import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import type { TokenData } from "@/lib/types";
 
-const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v5";
+const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v6";
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 
@@ -64,7 +63,7 @@ function writeCachedIndex(tokens: TokenData[]) {
   }
 }
 
-function applySnapshot(token: TokenData, snapshot: MarketSnapshot, holderSnapshot: HolderSnapshot | null): TokenData {
+function applySnapshot(token: TokenData, snapshot: MarketSnapshot): TokenData {
   const launchedAt = token.launchedAt ?? snapshot.chart.find((point) => point.timestamp)?.timestamp;
   return {
     ...token,
@@ -81,13 +80,39 @@ function applySnapshot(token: TokenData, snapshot: MarketSnapshot, holderSnapsho
     buyers: snapshot.buyers,
     sellers: snapshot.sellers,
     trades: snapshot.trades.length,
-    holders: holderSnapshot?.holders ?? 0,
+    holders: token.holders,
     curveProgress: snapshot.progress,
     status: snapshot.graduated ? "Graduated" : snapshot.progress >= 75 ? "Graduating soon" : "Live on curve",
     chartData: snapshot.chart,
     recentTrades: snapshot.trades,
     creatorProfile: { ...token.creatorProfile, totalVolume: snapshot.volume },
   };
+}
+
+function preserveMarketValues(base: TokenData, previous?: TokenData) {
+  if (!previous) return base;
+  return {
+    ...base,
+    price: previous.price,
+    priceChange24h: previous.priceChange24h,
+    marketCap: previous.marketCap,
+    raisedUSDC: previous.raisedUSDC,
+    volume5m: previous.volume5m,
+    volume1h: previous.volume1h,
+    volume24h: previous.volume24h,
+    buyers: previous.buyers,
+    sellers: previous.sellers,
+    trades: previous.trades,
+    holders: previous.holders,
+    curveProgress: previous.curveProgress,
+    status: previous.status,
+    chartData: previous.chartData,
+    recentTrades: previous.recentTrades,
+    creatorProfile: {
+      ...base.creatorProfile,
+      totalVolume: previous.creatorProfile.totalVolume,
+    },
+  } satisfies TokenData;
 }
 
 async function loadServerSnapshot<T>(path: string): Promise<{ snapshot: T; stale: boolean }> {
@@ -125,11 +150,11 @@ async function loadFactoryTokens(
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
     try {
       const snapshot = await loadIndexedMarketSnapshot(base, BigInt(indexResult.snapshot.indexedBlock));
-      return applySnapshot(base, snapshot, null);
+      return applySnapshot(base, snapshot);
     } catch (loadError) {
       try {
         const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);
-        return applySnapshot(base, marketResult.snapshot, null);
+        return applySnapshot(base, marketResult.snapshot);
       } catch (fallbackError) {
         marketDataError ??= fallbackError ?? loadError;
         return base;
@@ -137,17 +162,7 @@ async function loadFactoryTokens(
     }
   });
   onMarketLoaded?.(marketTokens, marketDataError, indexResult.stale);
-
-  const refreshQuery = forceRefresh ? "?refresh=1" : "";
-  const tokens = await mapWithConcurrency(marketTokens, 2, async (token) => {
-    try {
-      const holderResult = await loadServerSnapshot<HolderSnapshot>(`/api/onchain/tokens/${token.address}/holders${refreshQuery}`);
-      return { ...token, holders: holderResult.snapshot.holders };
-    } catch {
-      return token;
-    }
-  });
-  return { tokens, marketDataError, stale: indexResult.stale };
+  return { tokens: marketTokens, marketDataError, stale: indexResult.stale };
 }
 
 export function useFactoryTokenIndex({ includeMarketData = true, allowCache = true }: { includeMarketData?: boolean; allowCache?: boolean } = {}) {
@@ -166,7 +181,10 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         includeMarketData,
         forceRefresh,
         (indexedTokens, stale) => {
-          setTokens(indexedTokens);
+          setTokens((current) => indexedTokens.map((token) => preserveMarketValues(
+            token,
+            current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()),
+          )));
           setIsPartial(false);
           setIsCached(stale);
         },
@@ -180,7 +198,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       setTokens(result.tokens);
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);
-      setCachedAt(allowCache && includeMarketData ? writeCachedIndex(result.tokens) : null);
+      if (allowCache && includeMarketData) setCachedAt(writeCachedIndex(result.tokens));
       if (result.marketDataError) {
         const message = result.marketDataError instanceof Error ? result.marketDataError.message : String(result.marketDataError);
         setError(`Factory launches are confirmed, but some market values could not be refreshed. ${message}`);
@@ -188,16 +206,20 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         setError("Showing the latest confirmed Factory snapshot while Arc Testnet RPC recovers.");
       }
     } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : String(loadError);
+      const message = loadError instanceof AggregateError
+        ? "Live refresh is temporarily unavailable. The last confirmed launch list remains visible."
+        : loadError instanceof Error
+          ? loadError.message
+          : String(loadError);
       setIsPartial(false);
-      setError(message || "Factory launch data could not be indexed from Arc Testnet.");
+      setError(message || "Factory launch data could not be refreshed from Arc Testnet.");
     } finally {
       setLoading(false);
     }
   }, [allowCache, includeMarketData]);
 
   useEffect(() => {
-    if (allowCache && includeMarketData) {
+    if (allowCache) {
       const cached = readCachedIndex();
       if (cached) {
         setTokens(cached.tokens);

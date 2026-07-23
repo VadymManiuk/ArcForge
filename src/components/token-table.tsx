@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
+import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData } from "@/lib/types";
 import { money, number, utcDateTime } from "@/lib/utils";
 import { Badge, Button, Progress, RiskBadge, TokenIcon } from "./ui";
 
-const filters = ["All", "New", "Trending", "Graduating", "High volume", "Low risk"] as const;
+const filters = ["All", "Watchlist", "New", "Trending", "Graduating", "High volume", "Low risk"] as const;
 type Filter = typeof filters[number];
 type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "raisedUSDC" | "volume24h" | "trades" | "holders" | "curveProgress" | "riskScore";
 type SortDirection = "asc" | "desc";
@@ -53,6 +54,18 @@ export function TokenTable({
   const [filter, setFilter] = useState<Filter>("All");
   const [sort, setSort] = useState<SortKey>("volume24h");
   const [direction, setDirection] = useState<SortDirection>("desc");
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+
+  useEffect(() => {
+    const sync = () => setWatchlist(readWatchlist());
+    sync();
+    window.addEventListener("storage", sync);
+    window.addEventListener("arcorigin:watchlist-updated", sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("arcorigin:watchlist-updated", sync);
+    };
+  }, []);
 
   const changeSort = (key: SortKey) => {
     if (key === sort) {
@@ -68,6 +81,7 @@ export function TokenTable({
     const matchesSearch = [token.name, token.ticker, token.address, token.creator]
       .some((value) => value.toLowerCase().includes(normalizedQuery));
     if (!matchesSearch) return false;
+    if (filter === "Watchlist") return watchlist.includes(token.address.toLowerCase());
     if (filter === "New") return token.ageMinutes <= 1_440;
     if (filter === "Trending") return calculateMomentumScore(token) >= 40;
     if (filter === "Graduating") return token.curveProgress >= 75 && token.curveProgress < 100;
@@ -78,7 +92,7 @@ export function TokenTable({
     const difference = sortValue(left, sort) - sortValue(right, sort);
     if (difference !== 0) return direction === "desc" ? -difference : difference;
     return left.name.localeCompare(right.name);
-  }), [tokens, query, filter, sort, direction]);
+  }), [tokens, query, filter, sort, direction, watchlist]);
 
   return <div className="panel overflow-hidden">
     {!compact && <div className="border-b border-line p-3">
@@ -113,7 +127,7 @@ export function TokenTable({
 
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-3 md:hidden">
       {shown.map((token) => {
-        const awaitingLive = onchainState === "loading" || onchainState === "unavailable";
+        const awaitingLive = onchainState === "unavailable" && token.price <= 0;
         const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
         return <Link key={token.address} href={`/tokens/${token.address}`} className="min-w-0 rounded-xl border border-line bg-black/15 p-4 transition active:border-cyan/40">
           <div className="flex items-start justify-between gap-3">
@@ -150,7 +164,7 @@ export function TokenTable({
           <th></th>
         </tr></thead>
         <tbody>{shown.map((token) => {
-          const awaitingLive = onchainState === "loading" || onchainState === "unavailable";
+          const awaitingLive = onchainState === "unavailable" && token.price <= 0;
           const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
           return <tr key={token.address} className="border-b border-line/60 transition last:border-0 hover:bg-white/[.025]">
             <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><div className="flex items-center gap-2"><p className="font-semibold text-white">{token.name}</p><SourceBadge onchainState={onchainState}/></div><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><span className="text-[10px] text-slate-600">{token.status}</span></div></div></Link></td>
@@ -158,7 +172,7 @@ export function TokenTable({
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><p className="text-slate-200">{money(token.price)}</p><button type="button" onClick={() => changeSort("priceChange24h")} className={token.priceChange24h >= 0 ? "mt-1 text-emerald-400" : "mt-1 text-rose-400"}>Since launch {token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</button></>}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.marketCap, true)}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.raisedUSDC, true)}</td>
-            <td className="text-slate-300">{awaitingLive ? "Reading…" : money(token.volume24h, true)}</td>
+            <td className="text-slate-300">{awaitingLive ? "—" : money(token.volume24h, true)}</td>
             <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>
             <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>
             <td className="pr-5"><div className="mb-1.5 flex justify-between text-[10px] text-slate-500"><span>{awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></td>
@@ -173,7 +187,7 @@ export function TokenTable({
 }
 
 function SourceBadge({ onchainState }: { onchainState: OnchainState }) {
-  return <Badge tone={onchainState === "unavailable" || onchainState === "cached" ? "neutral" : "good"}>{onchainState === "loading" ? "Reading…" : onchainState === "cached" ? "Cached" : onchainState === "unavailable" ? "Unavailable" : "Onchain"}</Badge>;
+  return <Badge tone={onchainState === "unavailable" || onchainState === "cached" ? "neutral" : "good"}>{onchainState === "loading" ? "Refreshing" : onchainState === "cached" ? "Cached" : onchainState === "unavailable" ? "Unavailable" : "Onchain"}</Badge>;
 }
 
 function SortableHeader({ label, sortKey, secondarySortKey, activeSort, direction, onSort, className = "" }: {

@@ -24,6 +24,7 @@ const verifiedBootstrapByAddress = new Map(
 );
 
 type ClientLaunch = {
+  factory: `0x${string}`;
   token: `0x${string}`;
   curve: `0x${string}`;
   creator: `0x${string}`;
@@ -60,6 +61,7 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
       ticker: launch.symbol,
       address: launch.token,
       curveAddress: launch.curve,
+      factoryAddress: launch.factory,
       creator: launch.creator,
       launchBlock: Number(launch.launchBlock),
       launchedAt: launch.launchedAt,
@@ -74,6 +76,7 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
     icon: iconFor(launch.name, launch.symbol),
     address: launch.token,
     curveAddress: launch.curve,
+    factoryAddress: launch.factory,
     creator: launch.creator,
     source: "onchain",
     launchTxHash: launch.transactionHash,
@@ -160,6 +163,7 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
       ticker: launch.symbol,
       address: launch.token,
       curveAddress: launch.curve,
+      factoryAddress: launch.factory,
       creator: launch.creator,
       launchBlock: Number(launch.launchBlock),
       launchedAt: launch.launchedAt,
@@ -220,6 +224,7 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
     metadataURI,
     address: launch.token,
     curveAddress: launch.curve,
+    factoryAddress: launch.factory,
     creator: launch.creator,
     source: "onchain",
     creatorAllocationPercent,
@@ -263,9 +268,10 @@ export async function loadClientTokenIndex(
     toBlock: "latest",
     topic0: toEventSelector(tokenLaunchedEvent),
   })));
-  const launches: ClientLaunch[] = logGroups.flat().map((log) => {
+  const launches: ClientLaunch[] = logGroups.flatMap((logs, factoryIndex) => logs.map((log) => {
     const decoded = decodeEventLog({ abi: [tokenLaunchedEvent], data: log.data, topics: log.topics });
     return {
+      factory: ARC_TESTNET_FACTORY_INDEXES[factoryIndex].address,
       token: decoded.args.token,
       curve: decoded.args.curve,
       creator: decoded.args.creator,
@@ -275,7 +281,7 @@ export async function loadClientTokenIndex(
       launchedAt: log.timestamp,
       transactionHash: log.transactionHash,
     };
-  });
+  }));
   if (launches.length === 0) throw new Error("No verified Factory launches were returned.");
   const creatorCounts = new Map<string, number>();
   for (const launch of launches) {

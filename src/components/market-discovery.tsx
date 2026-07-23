@@ -101,8 +101,8 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
         <div className="mt-3"><Progress value={score}/></div>
       </Link>)}
 
-      {activeTab === "buys" && latestBuys.length === 0 && <EmptyActivity message="No confirmed buys yet. The feed will update after the first indexed trade."/>}
-      {activeTab === "launches" && newLaunches.length === 0 && <EmptyActivity message="No factory launches have been indexed yet."/>}
+      {activeTab === "buys" && latestBuys.length === 0 && <EmptyActivity message="No confirmed buys yet. The feed will update after the first onchain trade."/>}
+      {activeTab === "launches" && newLaunches.length === 0 && <EmptyActivity message="No confirmed factory launches yet."/>}
       {activeTab === "trending" && trending.length === 0 && <EmptyActivity message="Trending scores will appear when market activity is available."/>}
     </div>
   </section>;

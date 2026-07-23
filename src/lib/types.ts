@@ -49,6 +49,7 @@ export type TokenData = {
   image?: string;
   metadataURI?: string;
   curveAddress?: string;
+  factoryAddress?: string;
   source: "onchain";
   creatorAllocationPercent?: number;
   launchTxHash?: string;

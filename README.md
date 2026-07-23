@@ -37,13 +37,13 @@ pnpm build
 The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity names. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
 
 - `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
-- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. New deployments close buys at graduation while keeping sells available so holders retain an exit path.
+- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. V3 curves graduate into a permanent real-reserve AMM without a spot-price jump, so both buys and sells continue.
 - `ArcForgeFactory`: validates launches, collects a fixed launch fee, deploys token and curve, records creators.
 - `ArcForgeFeeVault`: pulls and records real ERC-20 fees by source; withdraws only to the visible recipient.
 - `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
 - `MockUSDC`: unrestricted minting for local tests only.
 
-The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Liquidity migration remains a documented placeholder and is not implemented. The active Arc Testnet V2 Factory uses pool-favoring reserve rounding and keeps post-graduation sells open. Tokens created by the legacy Factory retain their original curve behavior and remain indexed and tradeable through their deployed curves.
+The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. New V3 launches use a 10,000 virtual-USDC reserve and graduate after raising 40,000 real USDC: 80% of curve inventory has then been sold, and the remaining inventory is rebalanced at the same price into 40,000 USDC of permanent two-sided liquidity (about 80,000 USDC TVL). Surplus tokens are irreversibly locked and the curve exposes no liquidity-withdrawal function. Tokens created by legacy Factories retain their original immutable behavior and remain indexed and tradeable through their deployed curves.
 
 Launch metadata uses an immutable `ipfs://` CID stored by the token contract. The upload endpoint validates and optimizes images, requires a one-time wallet signature bound to the exact metadata payload, rate-limits uploads by wallet and client, and never exposes the storage credential to the browser.
 

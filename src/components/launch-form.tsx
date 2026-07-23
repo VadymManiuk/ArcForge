@@ -5,6 +5,11 @@ import { AtSign, Check, ChevronRight, ExternalLink, Globe, ImagePlus, LoaderCirc
 import { decodeEventLog, formatUnits, publicActions, type Address, type Hash } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
+import {
+  DEFAULT_GRADUATION_THRESHOLD,
+  DEFAULT_VIRTUAL_USDC_RESERVE,
+  calculateCurveEconomics,
+} from "@/lib/bonding-curve";
 import { erc20Abi, factoryAbi } from "@/lib/contracts";
 import {
   TOKEN_DESCRIPTION_MAX_LENGTH,
@@ -47,8 +52,8 @@ const confirmations = [
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const LAUNCH_FEE = 25n * 10n ** 6n;
 const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
-const VIRTUAL_USDC_RESERVE = 10_000n * 10n ** 6n;
-const GRADUATION_THRESHOLD = 50_000n * 10n ** 6n;
+const VIRTUAL_USDC_RESERVE = BigInt(DEFAULT_VIRTUAL_USDC_RESERVE) * 10n ** 6n;
+const GRADUATION_THRESHOLD = BigInt(DEFAULT_GRADUATION_THRESHOLD) * 10n ** 6n;
 
 function transactionError(error: unknown) {
   const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
@@ -169,6 +174,12 @@ export function LaunchForm() {
       ? Number(form.allocation) >= 0 && Number(form.allocation) <= 20
       : checks.length === confirmations.length;
   const isPending = status !== "idle";
+  const curveEconomics = useMemo(() => calculateCurveEconomics({
+    totalSupply: 1_000_000_000,
+    creatorAllocationPercent: Number(form.allocation) || 0,
+    virtualUsdcReserve: DEFAULT_VIRTUAL_USDC_RESERVE,
+    graduationThreshold: DEFAULT_GRADUATION_THRESHOLD,
+  }), [form.allocation]);
 
   function update(key: keyof FormData, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -417,6 +428,12 @@ export function LaunchForm() {
           <p className="mt-2 text-[11px] text-slate-500">The factory assigns the creator allocation to the wallet that signs the launch.</p>
         </div>
         <WarningBox>The contract enforces a maximum 20% creator allocation. Supply is fixed at deployment and the remaining tokens fund the curve.</WarningBox>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <EconomicsMetric label="Curve sold at graduation" value={`${curveEconomics.curveInventorySoldPercent.toFixed(0)}%`} />
+          <EconomicsMetric label="Permanent LP TVL" value={`$${curveEconomics.permanentLiquidityTvl.toLocaleString()}`} />
+          <EconomicsMetric label="Graduation FDV" value={`$${Math.round(curveEconomics.graduationMarketCap).toLocaleString()}`} />
+        </div>
+        <p className="text-[11px] leading-5 text-slate-500">The optimized curve graduates after 80% of its inventory is sold. Real USDC and price-matched tokens then become permanently locked two-sided liquidity with no withdrawal function.</p>
       </div>}
 
       {step === 3 && <div className="grid gap-5">
@@ -448,7 +465,8 @@ export function LaunchForm() {
       <dl className="mt-6 grid gap-3 text-xs">
         <Row label="Supply" value="1,000,000,000" />
         <Row label="Creator allocation" value={`${form.allocation || 0}%`} />
-        <Row label="Curve target" value="50,000 USDC" />
+        <Row label="Curve target" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
+        <Row label="Permanent LP TVL" value={`≈ ${curveEconomics.permanentLiquidityTvl.toLocaleString()} USDC`} />
         <Row label="Launch fee" value="25 USDC" />
         <Row label="Buy / sell fee" value="1% / 1%" />
         <Row label="Network" value="Arc Testnet" />
@@ -496,6 +514,10 @@ function Field({ label, value, onChange, icon, ...props }: { label: string; valu
 
 function PreviewTag({ icon, label }: { icon: React.ReactNode; label: string }) {
   return <span className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[.025] px-2 py-1 text-[10px] text-slate-400">{icon}{label}</span>;
+}
+
+function EconomicsMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl border border-line bg-black/20 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">{label}</p><p className="mt-2 text-sm font-semibold text-slate-200">{value}</p></div>;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

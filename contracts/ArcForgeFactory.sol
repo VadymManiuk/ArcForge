@@ -14,6 +14,7 @@ contract ArcForgeFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint16 public constant MAX_CREATOR_ALLOCATION_BPS = 2_000;
+    uint256 public constant GRADUATION_RESERVE_MULTIPLIER = 4;
     uint256 public constant MAX_NAME_BYTES = 64;
     uint256 public constant MAX_SYMBOL_BYTES = 10;
     uint256 public constant MAX_METADATA_URI_BYTES = 512;
@@ -88,7 +89,10 @@ contract ArcForgeFactory is Ownable, ReentrancyGuard {
         if (bytes(params.symbol).length > MAX_SYMBOL_BYTES) revert SymbolTooLong();
         if (bytes(params.metadataURI).length > MAX_METADATA_URI_BYTES) revert MetadataURITooLong();
         if (params.creatorAllocationBps > MAX_CREATOR_ALLOCATION_BPS) revert InvalidAllocation();
-        if (params.totalSupply == 0 || params.virtualUsdcReserve == 0 || params.graduationThreshold == 0) {
+        if (
+            params.totalSupply == 0 || params.virtualUsdcReserve == 0 ||
+            params.graduationThreshold != params.virtualUsdcReserve * GRADUATION_RESERVE_MULTIPLIER
+        ) {
             revert InvalidConfiguration();
         }
 

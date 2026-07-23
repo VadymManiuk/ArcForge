@@ -4,6 +4,7 @@ const { ethers } = require("hardhat");
 const USDC = 10n ** 6n;
 const TOKEN = 10n ** 18n;
 const LAUNCH_FEE = 25n * USDC;
+const LIQUIDITY_LOCK = "0x000000000000000000000000000000000000dEaD";
 
 async function deployPlatform() {
   const [owner, creator, trader, recipient, stranger] = await ethers.getSigners();
@@ -35,7 +36,7 @@ function launchParams(overrides = {}) {
     totalSupply: 1_000_000_000n * TOKEN,
     creatorAllocationBps: 500,
     virtualUsdcReserve: 10_000n * USDC,
-    graduationThreshold: 50_000n * USDC,
+    graduationThreshold: 40_000n * USDC,
     ...overrides,
   };
 }
@@ -87,6 +88,8 @@ describe("ArcForgeFactory and ArcForgeToken", function () {
     await expect(factory.connect(creator).launchToken(launchParams({ metadataURI: `ipfs://${"x".repeat(506)}` }))).to.be.revertedWithCustomError(factory, "MetadataURITooLong");
     await expect(factory.connect(creator).launchToken(launchParams({ creatorAllocationBps: 2001 })))
       .to.be.revertedWithCustomError(factory, "InvalidAllocation");
+    await expect(factory.connect(creator).launchToken(launchParams({ graduationThreshold: 50_000n * USDC })))
+      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
   });
 });
 
@@ -190,34 +193,90 @@ describe("ArcForgeBondingCurve", function () {
     }
   });
 
-  it("keeps a nonzero token reserve under an extreme buy input", async function () {
+  it("caps pre-graduation input so a large buy cannot drain the token reserve", async function () {
     const platform = await deployPlatform();
     const { trader, usdc } = platform;
     const { curve } = await launch(platform);
-    const excessiveInput = 10n ** 40n;
-    await usdc.mint(trader.address, excessiveInput);
-    await usdc.connect(trader).approve(await curve.getAddress(), excessiveInput);
-    const [quote] = await curve.quoteBuy(excessiveInput);
+    const maximum = await curve.maxBuyAmount();
+    await usdc.connect(trader).approve(await curve.getAddress(), maximum + 1n);
+    expect(await curve.quoteBuy(maximum + 1n)).to.deep.equal([0n, 0n]);
+    await expect(curve.connect(trader).buy(maximum + 1n, 0))
+      .to.be.revertedWithCustomError(curve, "GraduationThresholdExceeded")
+      .withArgs(maximum);
+    const [quote] = await curve.quoteBuy(maximum);
     expect(quote).to.be.greaterThan(0);
-    await expect(curve.connect(trader).buy(excessiveInput, quote)).to.emit(curve, "TokenBought");
-    expect(await curve.tokenReserve()).to.equal(1n);
+    await expect(curve.connect(trader).buy(maximum, quote)).to.emit(curve, "CurveGraduated");
+    expect(await curve.tokenReserve()).to.be.greaterThan(0);
   });
 
-  it("graduates at the configured net-USDC threshold", async function () {
+  it("graduates into permanent real-reserve liquidity without a price discontinuity", async function () {
     const platform = await deployPlatform();
     const { trader, usdc } = platform;
-    const { token, curve } = await launch(platform, { graduationThreshold: 99n * USDC });
-    const amount = 100n * USDC;
-    const [quote] = await curve.quoteBuy(amount);
-    await usdc.connect(trader).approve(await curve.getAddress(), amount);
-    await expect(curve.connect(trader).buy(amount, quote)).to.emit(curve, "CurveGraduated");
+    const { token, curve } = await launch(platform, {
+      virtualUsdcReserve: 25n * USDC,
+      graduationThreshold: 100n * USDC,
+    });
+    const maximum = await curve.maxBuyAmount();
+    const [quote] = await curve.quoteBuy(maximum);
+    const initialReserve = await curve.initialTokenReserve();
+    await usdc.connect(trader).approve(await curve.getAddress(), maximum + 50n * USDC);
+    const preGraduationTokenReserve = initialReserve - quote;
+    const expectedPrice = (125n * USDC) * TOKEN / preGraduationTokenReserve;
+
+    await expect(curve.connect(trader).buy(maximum, quote))
+      .to.emit(curve, "PermanentLiquidityActivated");
     expect(await curve.isGraduated()).to.equal(true);
-    await expect(curve.connect(trader).buy(amount, 0)).to.be.revertedWithCustomError(curve, "AlreadyGraduated");
+    expect(await curve.usdcReserve()).to.equal(100n * USDC);
+    expect(await curve.getCurveProgress()).to.equal(10_000n);
+    expect(await curve.tokensSold()).to.equal(quote);
+    const lockedAtGraduation = await token.balanceOf(LIQUIDITY_LOCK);
+    expect(lockedAtGraduation).to.be.greaterThan(0);
+    expect(await token.balanceOf(await curve.getAddress())).to.equal(await curve.tokenReserve());
+    expect(await curve.tokensSold() * 10_000n / initialReserve).to.be.closeTo(8_000n, 1n);
+
+    const postGraduationPrice = await curve.getCurrentPrice();
+    expect(postGraduationPrice).to.be.closeTo(expectedPrice, 1n);
+
+    const postGraduationBuy = 10n * USDC;
+    const [moreTokens] = await curve.quoteBuy(postGraduationBuy);
+    await expect(curve.connect(trader).buy(postGraduationBuy, moreTokens)).to.emit(curve, "TokenBought");
+    expect(moreTokens).to.be.greaterThan(0);
+
+    const invariantBeforeSell = (await curve.usdcReserve()) * (await curve.tokenReserve());
     const tokensToSell = quote / 2n;
     const [usdcOut] = await curve.quoteSell(tokensToSell);
     await token.connect(trader).approve(await curve.getAddress(), tokensToSell);
     await expect(curve.connect(trader).sell(tokensToSell, usdcOut)).to.emit(curve, "TokenSold");
     expect(usdcOut).to.be.greaterThan(0);
+    const invariantAfterSell = (await curve.usdcReserve()) * (await curve.tokenReserve());
+    expect(invariantAfterSell).to.be.at.least(invariantBeforeSell);
+    expect(await token.balanceOf(LIQUIDITY_LOCK)).to.equal(lockedAtGraduation);
+    expect(await token.balanceOf(await curve.getAddress())).to.equal(await curve.tokenReserve());
+  });
+
+  it("keeps the permanent AMM solvent across post-graduation round trips", async function () {
+    const platform = await deployPlatform();
+    const { trader, usdc } = platform;
+    const { token, curve } = await launch(platform);
+    const maximum = await curve.maxBuyAmount();
+    const [graduationQuote] = await curve.quoteBuy(maximum);
+    await usdc.connect(trader).approve(await curve.getAddress(), maximum + 1_000n * USDC);
+    await curve.connect(trader).buy(maximum, graduationQuote);
+
+    const lockedAtGraduation = await token.balanceOf(LIQUIDITY_LOCK);
+    for (let iteration = 0; iteration < 16; iteration += 1) {
+      const buyAmount = BigInt(5 + iteration) * USDC;
+      const [tokensOut] = await curve.quoteBuy(buyAmount);
+      await curve.connect(trader).buy(buyAmount, tokensOut);
+      const sellAmount = tokensOut / 2n;
+      const [usdcOut] = await curve.quoteSell(sellAmount);
+      await token.connect(trader).approve(await curve.getAddress(), sellAmount);
+      await curve.connect(trader).sell(sellAmount, usdcOut);
+
+      expect(await usdc.balanceOf(await curve.getAddress())).to.equal(await curve.usdcReserve());
+      expect(await token.balanceOf(await curve.getAddress())).to.equal(await curve.tokenReserve());
+      expect(await token.balanceOf(LIQUIDITY_LOCK)).to.equal(lockedAtGraduation);
+    }
   });
 });
 

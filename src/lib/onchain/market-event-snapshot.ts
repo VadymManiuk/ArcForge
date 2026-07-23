@@ -1,5 +1,6 @@
 import { decodeEventLog, formatUnits, getAddress, parseAbiItem } from "viem";
 import { arcTestnet } from "@/lib/chains";
+import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
@@ -122,22 +123,30 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
   }
 
   let tokenReserve = initialReserve;
+  let tokensDistributed = 0;
   let raisedUsdc = 0;
   let graduated = false;
+  const permanentLiquidityMode = usesPermanentLiquidityMode(virtualUsdc, targetUsdc);
   const priceTicks: IndexedPriceTick[] = [];
   for (const event of validEvents) {
     tokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
+    tokensDistributed += event.type === "Buy" ? event.tokens : -event.tokens;
     raisedUsdc = roundUsdc(Math.max(0, raisedUsdc + event.reserveUsdcDelta));
-    if (raisedUsdc >= targetUsdc) graduated = true;
     if (tokenReserve <= 0) throw new Error("Curve reserves are invalid.");
+    if (!graduated && raisedUsdc >= targetUsdc) {
+      graduated = true;
+      if (permanentLiquidityMode) {
+        tokenReserve = Math.ceil(raisedUsdc * tokenReserve / (virtualUsdc + raisedUsdc));
+      }
+    }
     priceTicks.push({
       event,
-      price: (virtualUsdc + raisedUsdc) / tokenReserve,
+      price: (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve,
     });
   }
   if (tokenReserve <= 0) throw new Error("Curve reserves are invalid.");
 
-  const price = (virtualUsdc + raisedUsdc) / tokenReserve;
+  const price = (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve;
   const launchPrice = virtualUsdc / initialReserve;
   const chartTicks = priceTicks.slice(-CHART_TRADE_LIMIT);
   const trades: Trade[] = validEvents.slice().reverse().map((event) => ({
@@ -171,7 +180,7 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
     targetUsdc,
     progress: raisedUsdc / targetUsdc * 100,
     graduated,
-    tokensSold: initialReserve - tokenReserve,
+    tokensSold: Math.max(0, tokensDistributed),
     tokenReserve,
     chart,
     trades,

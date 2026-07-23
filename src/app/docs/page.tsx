@@ -16,8 +16,17 @@ const sections = [
     title: "Trade",
     items: [
       ["Curve", "A virtual-USDC-reserve constant-product curve prices each trade."],
+      ["Liquidity", "Real USDC liquidity is shown separately from virtual quote depth, so sell-side backing is never overstated."],
       ["Protection", "Quotes include minimum output so slippage is enforced onchain."],
       ["Fees", "Buys and sells each charge a visible 1% protocol fee."],
+    ],
+  },
+  {
+    title: "Graduate",
+    items: [
+      ["Target", "The optimized curve graduates after 80% of its trading inventory is sold: 40,000 real USDC against a 10,000 virtual-USDC seed."],
+      ["Continuity", "Virtual liquidity is removed while token reserves are rebalanced at the same spot price, avoiding a migration price jump."],
+      ["Permanent AMM", "Price-matched tokens and real USDC stay in the curve as permanent two-sided liquidity; there is no owner withdrawal function."],
     ],
   },
   {
@@ -38,7 +47,7 @@ export default function DocsPage() {
         title="How ArcOrigin works"
         body="The essentials of launching, trading, and verifying a token—without hiding protocol behavior behind marketing language."
       />
-      <div className="container-shell grid gap-4 pb-20 lg:grid-cols-3">
+      <div className="container-shell grid gap-4 pb-20 lg:grid-cols-2">
         {sections.map((section, sectionIndex) => (
           <Panel key={section.title} className="p-5 md:p-6">
             <div className="flex items-center gap-3">
@@ -57,9 +66,9 @@ export default function DocsPage() {
             </div>
           </Panel>
         ))}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-2">
           <WarningBox>
-            ArcOrigin is live on testnet, not audited for mainnet, and not financial advice. Legacy v1 curves stop both buys and sells at graduation; the active factory uses the hardened v2 curve.
+            ArcOrigin is live on testnet, has not completed a mainnet audit, and is not financial advice. Legacy curves retain their original immutable graduation behavior; new permanent-liquidity curves use the hardened V3 model.
           </WarningBox>
         </div>
       </div>

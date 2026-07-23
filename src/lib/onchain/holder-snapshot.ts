@@ -7,6 +7,7 @@ import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const PERMANENT_LIQUIDITY_LOCK = "0x000000000000000000000000000000000000dead";
 const LOG_BLOCK_RANGE = 9_999n;
 const FACTORY_CACHE_TTL_MS = 60_000;
 const HOLDER_CACHE_TTL_MS = 45_000;
@@ -29,6 +30,7 @@ export type HolderSnapshot = {
   holders: number;
   creatorPercent: number;
   curvePercent: number;
+  permanentLiquidityLockPercent: number;
   topTenExcludingCurvePercent: number;
   indexedBlock: string;
   generatedAt: string;
@@ -273,17 +275,20 @@ async function loadHolderSnapshot(tokenAddress: Address): Promise<HolderSnapshot
   const curveAddress = launch.curve.toLowerCase();
   const creatorBalance = balances.get(launch.creator.toLowerCase()) ?? 0n;
   const curveBalance = balances.get(curveAddress) ?? 0n;
+  const permanentLiquidityLockBalance = balances.get(PERMANENT_LIQUIDITY_LOCK) ?? 0n;
+  const visibleHolders = positiveBalances.filter(([address]) => address !== PERMANENT_LIQUIDITY_LOCK);
   const topTenExcludingCurve = positiveBalances
-    .filter(([address]) => address !== curveAddress)
+    .filter(([address]) => address !== curveAddress && address !== PERMANENT_LIQUIDITY_LOCK)
     .map(([, balance]) => balance)
     .sort((left, right) => left === right ? 0 : left > right ? -1 : 1)
     .slice(0, 10)
     .reduce((sum, balance) => sum + balance, 0n);
 
   return {
-    holders: positiveBalances.length,
+    holders: visibleHolders.length,
     creatorPercent: percentOf(creatorBalance, totalSupply),
     curvePercent: percentOf(curveBalance, totalSupply),
+    permanentLiquidityLockPercent: percentOf(permanentLiquidityLockBalance, totalSupply),
     topTenExcludingCurvePercent: percentOf(topTenExcludingCurve, totalSupply),
     indexedBlock: indexedBlock.toString(),
     generatedAt: new Date().toISOString(),

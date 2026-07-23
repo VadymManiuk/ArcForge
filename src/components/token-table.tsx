@@ -10,7 +10,7 @@ import { Badge, Button, Progress, RiskBadge, TokenIcon } from "./ui";
 
 const filters = ["All", "New", "Trending", "Graduating", "High volume", "Low risk"] as const;
 type Filter = typeof filters[number];
-type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "volume24h" | "trades" | "holders" | "curveProgress" | "riskScore";
+type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "raisedUSDC" | "volume24h" | "trades" | "holders" | "curveProgress" | "riskScore";
 type SortDirection = "asc" | "desc";
 type OnchainState = "loading" | "live" | "cached" | "unavailable";
 
@@ -18,6 +18,7 @@ const sortOptions: { key: SortKey; label: string }[] = [
   { key: "created", label: "Created" },
   { key: "volume24h", label: "Volume" },
   { key: "marketCap", label: "Market cap" },
+  { key: "raisedUSDC", label: "Liquidity" },
   { key: "price", label: "Price" },
   { key: "priceChange24h", label: "24h change" },
   { key: "trades", label: "Trades" },
@@ -119,9 +120,10 @@ export function TokenTable({
             <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><SourceBadge onchainState={onchainState}/></div></div></div>
             {awaitingLive ? <span className="text-slate-600">—</span> : <RiskBadge score={token.riskScore}/>}
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-xs sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-xs sm:grid-cols-5">
             <MobileMetric label="Created" value={createdLabel(token)}/>
             <MobileMetric label="Market cap" value={awaitingLive ? "—" : money(token.marketCap, true)}/>
+            <MobileMetric label="Liquidity" value={awaitingLive ? "—" : money(token.raisedUSDC, true)}/>
             <MobileMetric label="Volume" value={awaitingLive ? "—" : money(token.volume24h, true)}/>
             <MobileMetric label="Holders" value={token.holders === 0 ? "—" : number(token.holders)}/>
           </div>
@@ -133,12 +135,13 @@ export function TokenTable({
     </div>
 
     <div className="hidden overflow-x-auto md:block">
-      <table className="w-full min-w-[1180px] text-left text-xs [&_td]:px-3 [&_th]:px-3">
+      <table className="w-full min-w-[1280px] text-left text-xs [&_td]:px-3 [&_th]:px-3">
         <thead><tr className="border-b border-line bg-white/[.012] text-[10px] text-slate-500">
           <th className="px-4 py-3 font-medium">Token</th>
           <SortableHeader label="Created" sortKey="created" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Price / 24h" sortKey="price" secondarySortKey="priceChange24h" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Market cap" sortKey="marketCap" activeSort={sort} direction={direction} onSort={changeSort}/>
+          <SortableHeader label="Liquidity" sortKey="raisedUSDC" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Volume" sortKey="volume24h" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Trades" sortKey="trades" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Holders" sortKey="holders" activeSort={sort} direction={direction} onSort={changeSort}/>
@@ -154,6 +157,7 @@ export function TokenTable({
             <td className="whitespace-nowrap text-slate-400">{createdLabel(token)}</td>
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><p className="text-slate-200">{money(token.price)}</p><button type="button" onClick={() => changeSort("priceChange24h")} className={token.priceChange24h >= 0 ? "mt-1 text-emerald-400" : "mt-1 text-rose-400"}>Since launch {token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</button></>}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.marketCap, true)}</td>
+            <td className="text-slate-300">{awaitingLive ? "—" : money(token.raisedUSDC, true)}</td>
             <td className="text-slate-300">{awaitingLive ? "Reading…" : money(token.volume24h, true)}</td>
             <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>
             <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>

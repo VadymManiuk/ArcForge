@@ -2,6 +2,7 @@ import "server-only";
 
 import { createPublicClient, decodeEventLog, formatUnits, http, parseAbiItem, type Address, type Hash } from "viem";
 import { arcTestnet } from "@/lib/chains";
+import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
@@ -254,21 +255,29 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
     ? left.logIndex - right.logIndex
     : left.blockNumber < right.blockNumber ? -1 : 1);
   let tokenReserve = initialReserve;
+  let tokensDistributed = 0;
   let raisedUsdc = 0;
   let graduated = false;
+  const permanentLiquidityMode = usesPermanentLiquidityMode(virtualUsdc, targetUsdc);
   const priceTicks: IndexedPriceTick[] = [];
   for (const event of validEvents) {
     tokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
+    tokensDistributed += event.type === "Buy" ? event.tokens : -event.tokens;
     raisedUsdc = roundUsdc(Math.max(0, raisedUsdc + event.reserveUsdcDelta));
-    if (raisedUsdc >= targetUsdc) graduated = true;
     if (tokenReserve <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
+    if (!graduated && raisedUsdc >= targetUsdc) {
+      graduated = true;
+      if (permanentLiquidityMode) {
+        tokenReserve = Math.ceil(raisedUsdc * tokenReserve / (virtualUsdc + raisedUsdc));
+      }
+    }
     priceTicks.push({
       event,
-      price: (virtualUsdc + raisedUsdc) / tokenReserve,
+      price: (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve,
     });
   }
   if (tokenReserve <= 0 || initialReserve <= 0 || totalSupply <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
-  const price = (virtualUsdc + raisedUsdc) / tokenReserve;
+  const price = (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve;
 
   const chartTicks = priceTicks.slice(-CHART_TRADE_LIMIT);
   const chartEvents = chartTicks.map(({ event }) => event);
@@ -307,7 +316,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
     targetUsdc,
     progress: targetUsdc > 0 ? raisedUsdc / targetUsdc * 100 : 0,
     graduated,
-    tokensSold: initialReserve - tokenReserve,
+    tokensSold: Math.max(0, tokensDistributed),
     tokenReserve,
     chart,
     trades,

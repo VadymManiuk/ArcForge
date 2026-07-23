@@ -18,6 +18,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { ARC_TESTNET_CONTRACTS, arcTestnet } from "@/lib/chains";
+import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
 import type { TokenData } from "@/lib/types";
 import { ArcscanLink, Badge, Button } from "./ui";
@@ -101,7 +102,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const inputSymbol = side === "Buy" ? "USDC" : token.ticker;
   const outputSymbol = side === "Buy" ? token.ticker : "USDC";
   const isPending = status !== "idle";
-  const buyDisabled = side === "Buy" && token.status === "Graduated";
+  const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
+  const buyDisabled = side === "Buy" && token.status === "Graduated" && !permanentLiquidityMode;
   const activeBalance = side === "Buy" ? balances?.usdc : balances?.token;
 
   const refreshBalances = useCallback(async () => {
@@ -200,7 +202,17 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         functionName: side === "Buy" ? "quoteBuy" : "quoteSell",
         args: [input],
       }));
-      if (output <= 0n) throw new Error(side === "Sell" ? "The curve has insufficient USDC liquidity for this sale." : "The curve returned zero tokens.");
+      if (output <= 0n) {
+        if (side === "Buy" && permanentLiquidityMode && token.status !== "Graduated") {
+          const maximum = await withRpcRetry(() => client.readContract({
+            address: curveAddress,
+            abi: bondingCurveAbi,
+            functionName: "maxBuyAmount",
+          }));
+          throw new Error(`This input exceeds the remaining curve capacity. Maximum buy: ${displayUnits(maximum, 6)} USDC.`);
+        }
+        throw new Error(side === "Sell" ? "The curve has insufficient USDC liquidity for this sale." : "The curve returned zero tokens.");
+      }
       const slippageBps = BigInt(Math.round(slippage * 100));
       const minimumOutput = output * (10_000n - slippageBps) / 10_000n;
       setQuote({ input, output, fee, minimumOutput });
@@ -308,6 +320,10 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.fee, 6)} USDC` : "1.00%"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div></dl>
     <Button className="w-full" disabled={isPending || buyDisabled} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
     {notice && <p className={`mt-3 rounded-lg p-2 text-[11px] leading-4 ${transactionHash ? "bg-emerald-400/[.07] text-emerald-300" : "bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
-    <p className="mt-4 text-[11px] leading-5 text-slate-500">{token.status === "Graduated" ? "Buying is closed after graduation. Selling remains available while the curve has USDC liquidity." : `Trades execute against the deployed ${token.ticker} curve. Your wallet may request an exact-token approval first.`}</p>
+    <p className="mt-4 text-[11px] leading-5 text-slate-500">{token.status === "Graduated"
+      ? permanentLiquidityMode
+        ? "Graduated into permanent real-reserve liquidity. Both buys and sells continue with no liquidity withdrawal function."
+        : "Buying is closed on this legacy curve after graduation. Selling remains available while the curve has USDC liquidity."
+      : `Trades execute against the deployed ${token.ticker} curve. Your wallet may request an exact-token approval first.`}</p>
   </div>;
 }

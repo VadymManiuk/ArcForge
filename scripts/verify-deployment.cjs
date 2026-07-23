@@ -79,6 +79,9 @@ async function main() {
     ["launch fee", () => factory.launchFee()],
     ["buy fee", () => factory.buyFeeBps()],
     ["sell fee", () => factory.sellFeeBps()],
+    ...(manifest.curveModel?.version === 3
+      ? [["graduation multiplier", () => factory.GRADUATION_RESERVE_MULTIPLIER()]]
+      : []),
   ]) {
     values.push(await withRpcRetry(label, read));
   }
@@ -94,6 +97,9 @@ async function main() {
   assertEqual("launch fee", values[8], EXPECTED_LAUNCH_FEE);
   assertEqual("buy fee", values[9], EXPECTED_TRADING_FEE_BPS);
   assertEqual("sell fee", values[10], EXPECTED_TRADING_FEE_BPS);
+  if (manifest.curveModel?.version === 3) {
+    assertEqual("graduation multiplier", values[11], 4n);
+  }
 
   for (const [index, address] of legacyFactories.entries()) {
     const legacyFactory = await hre.ethers.getContractAt("ArcForgeFactory", address);

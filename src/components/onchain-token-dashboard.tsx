@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { TokenChart } from "@/components/token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, StatCard, WarningBox } from "@/components/ui";
+import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
@@ -118,6 +119,11 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
     return () => window.removeEventListener("arcforge:trade-confirmed", handleTrade);
   }, [refreshHolders, token.address]);
 
+  const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
+  const effectiveQuoteDepth = snapshot.graduated && permanentLiquidityMode
+    ? snapshot.raisedUsdc
+    : (token.virtualUsdcReserve ?? 0) + snapshot.raisedUsdc;
+  const remainingToGraduation = Math.max(0, token.targetUSDC - snapshot.raisedUsdc);
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
   return <>
     <Panel className="p-5">
@@ -125,21 +131,25 @@ export function OnchainTokenDashboard({ token }: { token: TokenData }) {
       <TokenChart data={snapshot.chart}/>
       {error && <WarningBox>{error}</WarningBox>}
     </Panel>
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       <StatCard label="Market cap" value={money(snapshot.marketCap, true)} detail="Current curve price × supply"/>
+      <StatCard label="Real liquidity" value={money(snapshot.raisedUsdc)} detail={`${money(effectiveQuoteDepth)} effective quote depth`}/>
       <StatCard label="Onchain volume" value={money(snapshot.volume)} detail={`${snapshot.trades.length} confirmed trades`}/>
       <StatCard label="Holders" value={holderLoading && !holderSnapshot ? "—" : holderSnapshot ? number(holderSnapshot.holders) : "Unavailable"} detail={holderSnapshot ? `Transfer events · block ${holderSnapshot.indexedBlock}` : "Factory-validated index"}/>
       <StatCard label="Since launch" value={`${snapshot.priceChange >= 0 ? "+" : ""}${snapshot.priceChange.toFixed(2)}%`} className={snapshot.priceChange >= 0 ? "text-emerald-300" : "text-rose-300"}/>
     </div>
     <Panel className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><h2 className="mt-2 text-lg font-semibold text-white">Indexed from Transfer events</h2></div><div className="flex gap-2"><Badge tone={holderLoading || holderStale ? "neutral" : "good"}>{holderLoading ? "Updating…" : holderStale ? "Last confirmed" : "Live holders"}</Badge><Button variant="ghost" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
-      {holderSnapshot && <div className="mt-5 grid gap-5 md:grid-cols-3">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Bonding curve", holderSnapshot.curvePercent]].map(([label, value]) => <div key={String(label)}><div className="mb-2 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-300">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
+      {holderSnapshot && <div className="mt-5 grid gap-5 md:grid-cols-4">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Trading curve", holderSnapshot.curvePercent], ["Permanent lock", holderSnapshot.permanentLiquidityLockPercent]].map(([label, value]) => <div key={String(label)}><div className="mb-2 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-300">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
       {holderError && <WarningBox>{holderError}</WarningBox>}
     </Panel>
     <Panel className="p-5">
-      <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Bonding curve</p><h2 className="mt-2 text-xl font-semibold text-white">{progressLabel} toward graduation</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">USDC raised</p></div></div>
+      <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">{snapshot.graduated && permanentLiquidityMode ? "Permanent liquidity" : "Bonding curve"}</p><h2 className="mt-2 text-xl font-semibold text-white">{snapshot.graduated ? permanentLiquidityMode ? "Graduated · real-reserve AMM active" : "Graduated" : `${progressLabel} toward graduation`}</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">Real USDC liquidity</p></div></div>
       <div className="my-5"><Progress value={snapshot.progress}/></div>
-      <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-4"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Curve inventory" value={number(snapshot.tokenReserve)}/><Metric label="Buys / sells" value={`${snapshot.buyers} / ${snapshot.sellers}`}/><Metric label="Migration" value="Not enabled"/></div>
+      <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-5"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Curve inventory" value={number(snapshot.tokenReserve)}/><Metric label="Effective depth" value={money(effectiveQuoteDepth)}/><Metric label="Remaining" value={money(remainingToGraduation)}/><Metric label="After graduation" value={permanentLiquidityMode ? "Permanent AMM" : "Legacy curve"}/></div>
+      <p className="mt-5 border-t border-line pt-4 text-[11px] leading-5 text-slate-500">{permanentLiquidityMode
+        ? "At 100%, virtual liquidity is removed without changing the spot price. Price-matched tokens and all real USDC remain in the curve as permanent two-sided AMM liquidity; buys and sells continue."
+        : "Legacy curve: real USDC backs sells, while virtual USDC shapes pricing. Buying closes at the configured threshold because this deployment predates permanent-liquidity graduation."}</p>
     </Panel>
     <Panel className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-line p-5"><div><p className="eyebrow">Event activity</p><h2 className="mt-2 text-lg font-semibold">Recent onchain trades</h2></div><Button variant="ghost" disabled={loading} onClick={() => void refresh(true)}>Refresh</Button></div>

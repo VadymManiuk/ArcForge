@@ -2,6 +2,7 @@ import { createPublicClient, decodeEventLog, formatUnits, http, parseAbiItem, to
 import { ARC_TESTNET_FACTORY_INDEXES, arcTestnet } from "@/lib/chains";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
+import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import { calculateRiskScore } from "@/lib/scoring";
 import { normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
 import type { CreatorProfile, TokenData } from "@/lib/types";
@@ -18,6 +19,9 @@ const curveConfigAbi = [
 ] as const;
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const METADATA_TIMEOUT_MS = 2_000;
+const verifiedBootstrapByAddress = new Map(
+  getVerifiedBootstrapTokens().map((token) => [token.address.toLowerCase(), token]),
+);
 
 type ClientLaunch = {
   token: `0x${string}`;
@@ -48,9 +52,10 @@ function iconFor(name: string, symbol: string) {
 }
 
 function createPendingToken(launch: ClientLaunch, creatorLaunches: number): TokenData {
-  if (launch.token.toLowerCase() === legacyGenesisToken.address.toLowerCase()) {
+  const verifiedToken = verifiedBootstrapByAddress.get(launch.token.toLowerCase());
+  if (verifiedToken) {
     return {
-      ...legacyGenesisToken,
+      ...verifiedToken,
       name: launch.name,
       ticker: launch.symbol,
       address: launch.token,
@@ -60,7 +65,7 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
       launchedAt: launch.launchedAt,
       ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
       launchTxHash: launch.transactionHash,
-      creatorProfile: { ...legacyGenesisToken.creatorProfile, launches: creatorLaunches },
+      creatorProfile: { ...verifiedToken.creatorProfile, launches: creatorLaunches },
     };
   }
   return {

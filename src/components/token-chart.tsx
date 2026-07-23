@@ -6,22 +6,17 @@ import type { ChartPoint } from "@/lib/types";
 import { money } from "@/lib/utils";
 import { Button } from "./ui";
 
-const ranges = ["5m", "1h", "6h", "24h", "All"] as const;
-type ChartRange = (typeof ranges)[number];
+const timeframes = ["1s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
+type ChartTimeframe = (typeof timeframes)[number];
 
-const intervalSeconds: Record<ChartRange, number> = {
-  "5m": 15,
-  "1h": 60,
-  "6h": 300,
-  "24h": 900,
-  All: 3600,
-};
-
-const rangeSeconds: Record<Exclude<ChartRange, "All">, number> = {
+const timeframeSeconds: Record<ChartTimeframe, number> = {
+  "1s": 1,
+  "1m": 60,
   "5m": 5 * 60,
+  "15m": 15 * 60,
   "1h": 60 * 60,
-  "6h": 6 * 60 * 60,
-  "24h": 24 * 60 * 60,
+  "4h": 4 * 60 * 60,
+  "1d": 24 * 60 * 60,
 };
 
 type Candle = {
@@ -41,7 +36,7 @@ function tokenPrice(value: number) {
   return money(value);
 }
 
-function buildCandles(data: ChartPoint[], range: ChartRange): Candle[] {
+export function buildCandles(data: ChartPoint[], timeframe: ChartTimeframe): Candle[] {
   if (data.length === 0) return [];
   const fallbackStart = 1_700_000_000;
   const ticks = data.map((point, index) => ({
@@ -52,15 +47,11 @@ function buildCandles(data: ChartPoint[], range: ChartRange): Candle[] {
     .sort((left, right) => left.timestamp - right.timestamp);
   if (ticks.length === 0) return [];
 
-  const latestTimestamp = ticks.at(-1)?.timestamp ?? fallbackStart;
-  const visibleTicks = range === "All"
-    ? ticks
-    : ticks.filter((tick) => tick.timestamp >= latestTimestamp - rangeSeconds[range]);
-  const source = visibleTicks.length > 0 ? visibleTicks : [ticks[ticks.length - 1]];
-  const bucketSize = intervalSeconds[range];
+  const bucketSize = timeframeSeconds[timeframe];
   const buckets = new Map<number, Candle>();
+  let previousClose: number | undefined;
 
-  for (const tick of source) {
+  for (const tick of ticks) {
     const bucket = Math.floor(tick.timestamp / bucketSize) * bucketSize;
     const existing = buckets.get(bucket);
     if (existing) {
@@ -69,29 +60,36 @@ function buildCandles(data: ChartPoint[], range: ChartRange): Candle[] {
       existing.close = tick.price;
       existing.volume += tick.volume;
     } else {
+      const open = previousClose ?? tick.price;
       buckets.set(bucket, {
         time: bucket as UTCTimestamp,
-        open: tick.price,
-        high: tick.price,
-        low: tick.price,
+        open,
+        high: Math.max(open, tick.price),
+        low: Math.min(open, tick.price),
         close: tick.price,
         volume: tick.volume,
       });
     }
+    previousClose = tick.price;
   }
 
-  return [...buckets.values()].sort((left, right) => Number(left.time) - Number(right.time));
+  return [...buckets.values()]
+    .sort((left, right) => Number(left.time) - Number(right.time))
+    .slice(-600);
 }
 
 export function TokenChart({ data, compact = false }: { data: ChartPoint[]; compact?: boolean }) {
-  const [range, setRange] = useState<ChartRange>("24h");
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
+  const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
   const [ready, setReady] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const candles = useMemo(() => buildCandles(data, compact ? "All" : range), [compact, data, range]);
+  const candleMapRef = useRef(new Map<number, Candle>());
+  const candles = useMemo(() => buildCandles(data, compact ? "1h" : timeframe), [compact, data, timeframe]);
   const latestCandle = candles.at(-1);
+  const activeCandle = hoveredCandle ?? latestCandle;
 
   useEffect(() => {
     let disposed = false;
@@ -130,9 +128,9 @@ export function TokenChart({ data, compact = false }: { data: ChartPoint[]; comp
           borderColor: "#252b2d",
           timeVisible: true,
           secondsVisible: false,
-          rightOffset: 4,
-          barSpacing: compact ? 8 : 18,
-          minBarSpacing: 4,
+          rightOffset: 5,
+          barSpacing: compact ? 7 : 10,
+          minBarSpacing: 2,
         },
         handleScroll: !compact,
         handleScale: !compact,
@@ -160,6 +158,13 @@ export function TokenChart({ data, compact = false }: { data: ChartPoint[]; comp
       chartRef.current = chart;
       candleSeriesRef.current = candleSeries;
       volumeSeriesRef.current = volumeSeries;
+      chart.subscribeCrosshairMove((parameter) => {
+        if (typeof parameter.time !== "number") {
+          setHoveredCandle(null);
+          return;
+        }
+        setHoveredCandle(candleMapRef.current.get(parameter.time) ?? null);
+      });
       setReady(true);
     }
     void createTradingChart();
@@ -175,6 +180,8 @@ export function TokenChart({ data, compact = false }: { data: ChartPoint[]; comp
 
   useEffect(() => {
     if (!ready || !chartRef.current || !candleSeriesRef.current || !volumeSeriesRef.current) return;
+    candleMapRef.current = new Map(candles.map((candle) => [Number(candle.time), candle]));
+    setHoveredCandle(null);
     candleSeriesRef.current.setData(candles.map((candle) => ({
       time: candle.time,
       open: candle.open,
@@ -187,19 +194,30 @@ export function TokenChart({ data, compact = false }: { data: ChartPoint[]; comp
       value: candle.volume,
       color: candle.close >= candle.open ? "rgba(52, 211, 153, 0.32)" : "rgba(251, 113, 133, 0.32)",
     })));
-    chartRef.current.timeScale().applyOptions({ secondsVisible: range === "5m" });
-    chartRef.current.timeScale().fitContent();
-  }, [candles, range, ready]);
+    chartRef.current.timeScale().applyOptions({ secondsVisible: timeframe === "1s" });
+    if (compact) {
+      chartRef.current.timeScale().fitContent();
+    } else {
+      const visibleBars = Math.max(60, Math.min(120, candles.length));
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: candles.length - visibleBars,
+        to: candles.length + 5,
+      });
+    }
+  }, [candles, compact, ready, timeframe]);
 
   return <div className={compact ? "h-36" : "h-[430px]"}>
     {!compact && <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <div className="flex items-center gap-3"><div><p className="text-xs text-slate-500">Price · USDC</p><p className="mt-1 text-xl font-semibold text-white">{tokenPrice(data.at(-1)?.price ?? 0)}</p></div><span className="rounded-md border border-line bg-black/20 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">OHLC · onchain</span></div>
-        {latestCandle && <div className="mt-2 flex flex-wrap gap-3 font-mono text-[9px] text-slate-500"><span>O <b className="font-normal text-slate-300">{tokenPrice(latestCandle.open)}</b></span><span>H <b className="font-normal text-emerald-300">{tokenPrice(latestCandle.high)}</b></span><span>L <b className="font-normal text-rose-300">{tokenPrice(latestCandle.low)}</b></span><span>C <b className="font-normal text-slate-300">{tokenPrice(latestCandle.close)}</b></span></div>}
+        {activeCandle && <div className="mt-2 flex flex-wrap gap-3 font-mono text-[9px] text-slate-500"><span>O <b className="font-normal text-slate-300">{tokenPrice(activeCandle.open)}</b></span><span>H <b className="font-normal text-emerald-300">{tokenPrice(activeCandle.high)}</b></span><span>L <b className="font-normal text-rose-300">{tokenPrice(activeCandle.low)}</b></span><span>C <b className="font-normal text-slate-300">{tokenPrice(activeCandle.close)}</b></span><span>V <b className="font-normal text-slate-300">{money(activeCandle.volume)}</b></span></div>}
       </div>
-      <div className="flex flex-wrap items-center gap-1">{ranges.map((item) => <Button key={item} variant="ghost" className={range === item ? "h-8 bg-white/[.07] px-3 text-white" : "h-8 px-3"} onClick={() => setRange(item)}>{item}</Button>)}</div>
+      <div>
+        <p className="mb-1.5 text-right font-mono text-[9px] uppercase tracking-wider text-slate-600">Candle interval</p>
+        <div className="flex flex-wrap items-center justify-end gap-1">{timeframes.map((item) => <Button key={item} variant="ghost" className={timeframe === item ? "h-8 bg-white/[.07] px-3 text-white" : "h-8 px-3"} onClick={() => setTimeframe(item)}>{item}</Button>)}</div>
+      </div>
     </div>}
     <div ref={containerRef} className={compact ? "h-36 w-full" : "h-[350px] w-full"} aria-label="Interactive candlestick price chart" />
-    {!compact && <div className="mt-2 text-[9px] text-slate-600">Drag to move · wheel to zoom · volume below candles</div>}
+    {!compact && <div className="mt-2 flex items-center justify-between gap-3 text-[9px] text-slate-600"><span>Drag to move · wheel to zoom · volume below candles</span><span>Each candle = {timeframe}</span></div>}
   </div>;
 }

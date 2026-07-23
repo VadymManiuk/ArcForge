@@ -40,6 +40,11 @@ type IndexedTrade = {
   timestamp: number;
 };
 
+type IndexedPriceTick = {
+  event: IndexedTrade;
+  price: number;
+};
+
 function roundUsdc(value: number) {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
@@ -119,16 +124,22 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
   let tokenReserve = initialReserve;
   let raisedUsdc = 0;
   let graduated = false;
+  const priceTicks: IndexedPriceTick[] = [];
   for (const event of validEvents) {
     tokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
     raisedUsdc = roundUsdc(Math.max(0, raisedUsdc + event.reserveUsdcDelta));
     if (raisedUsdc >= targetUsdc) graduated = true;
+    if (tokenReserve <= 0) throw new Error("Curve reserves are invalid.");
+    priceTicks.push({
+      event,
+      price: (virtualUsdc + raisedUsdc) / tokenReserve,
+    });
   }
   if (tokenReserve <= 0) throw new Error("Curve reserves are invalid.");
 
   const price = (virtualUsdc + raisedUsdc) / tokenReserve;
   const launchPrice = virtualUsdc / initialReserve;
-  const chartEvents = validEvents.slice(-CHART_TRADE_LIMIT);
+  const chartTicks = priceTicks.slice(-CHART_TRADE_LIMIT);
   const trades: Trade[] = validEvents.slice().reverse().map((event) => ({
     time: `Block ${event.blockNumber.toString()}`,
     timestamp: event.timestamp,
@@ -141,13 +152,12 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
   }));
   const chart: ChartPoint[] = [
     { time: "Launch", timestamp: token.launchedAt, price: launchPrice, volume: 0 },
-    ...chartEvents.map((event) => ({
+    ...chartTicks.map(({ event, price: spotPrice }) => ({
       time: `#${(event.blockNumber % 100_000n).toString()}`,
       timestamp: event.timestamp,
-      price: event.notional / event.tokens,
+      price: spotPrice,
       volume: event.notional,
     })),
-    { time: "Now", timestamp: Math.floor(Date.now() / 1_000), price, volume: 0 },
   ];
 
   return {

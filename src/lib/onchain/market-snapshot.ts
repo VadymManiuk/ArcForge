@@ -56,6 +56,11 @@ type IndexedTrade = {
   timestamp?: number;
 };
 
+type IndexedPriceTick = {
+  event: IndexedTrade;
+  price: number;
+};
+
 type MarketState = {
   tokenCaches: Map<string, MarketCacheEntry>;
   blockTimestamps: Map<string, number>;
@@ -251,15 +256,22 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   let tokenReserve = initialReserve;
   let raisedUsdc = 0;
   let graduated = false;
+  const priceTicks: IndexedPriceTick[] = [];
   for (const event of validEvents) {
     tokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
     raisedUsdc = roundUsdc(Math.max(0, raisedUsdc + event.reserveUsdcDelta));
     if (raisedUsdc >= targetUsdc) graduated = true;
+    if (tokenReserve <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
+    priceTicks.push({
+      event,
+      price: (virtualUsdc + raisedUsdc) / tokenReserve,
+    });
   }
   if (tokenReserve <= 0 || initialReserve <= 0 || totalSupply <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
   const price = (virtualUsdc + raisedUsdc) / tokenReserve;
 
-  const chartEvents = validEvents.slice(-CHART_TRADE_LIMIT);
+  const chartTicks = priceTicks.slice(-CHART_TRADE_LIMIT);
+  const chartEvents = chartTicks.map(({ event }) => event);
   const missingTimestampBlocks = chartEvents.filter((event) => event.timestamp === undefined).map((event) => event.blockNumber);
   const blockTimestamps = missingTimestampBlocks.length > 0
     ? await loadBlockTimestamps(missingTimestampBlocks)
@@ -276,13 +288,12 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   }));
   const chart: ChartPoint[] = [
     { time: "Launch", timestamp: launch.launchedAt, price: launchPrice, volume: 0 },
-    ...chartEvents.map((event) => ({
+    ...chartTicks.map(({ event, price: spotPrice }) => ({
       time: `#${(event.blockNumber % 100_000n).toString()}`,
       timestamp: event.timestamp ?? blockTimestamps.get(event.blockNumber.toString()),
-      price: event.notional / event.tokens,
+      price: spotPrice,
       volume: event.notional,
     })),
-    { time: "Now", timestamp: Math.floor(Date.now() / 1_000), price, volume: 0 },
   ];
 
   return {

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AtSign, ExternalLink, Globe, RefreshCw, ShieldCheck } from "lucide-react";
 import { useAccount } from "wagmi";
 import { PnlShareCard } from "@/components/pnl-share-card";
-import { TokenChart } from "@/components/token-chart";
+import { KLineTokenChart } from "@/components/kline-token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, RiskBadge, TokenIcon, WarningBox } from "@/components/ui";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
@@ -200,7 +200,7 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
           <p className={`mt-1 text-xs font-semibold ${netFlow >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{netFlow >= 0 ? "+" : "−"}{money(Math.abs(netFlow))}</p>
         </div>
       </div>
-      <TokenChart
+      <KLineTokenChart
         data={snapshot.chart}
         trades={snapshot.trades}
         tokenName={token.name}

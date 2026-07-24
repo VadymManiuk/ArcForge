@@ -36,7 +36,7 @@ import type { ChartPoint, Trade } from "@/lib/types";
 import { money } from "@/lib/utils";
 
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
-type ChartTimeframe = (typeof timeframes)[number];
+export type ChartTimeframe = (typeof timeframes)[number];
 type DisplayMode = "Price" | "MCap";
 type ScaleMode = "auto" | "log" | "%";
 type DrawingTool = "cursor" | "trend" | "horizontal" | "vertical" | "measure";

@@ -37,6 +37,9 @@ importers:
       framer-motion:
         specifier: ^12.23.6
         version: 12.42.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      klinecharts:
+        specifier: ^10.0.0
+        version: 10.0.0
       lightweight-charts:
         specifier: ^5.2.0
         version: 5.2.0
@@ -3603,6 +3606,9 @@ packages:
   kleur@3.0.3:
     resolution: {integrity: sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==}
     engines: {node: '>=6'}
+
+  klinecharts@10.0.0:
+    resolution: {integrity: sha512-njopc5Wwff83l9R750Yrj+EcmQUe7JUwN4xgmmwhUPX30jd7ZLabBQT5s2+yTaAk98MMqglCE6vqrSnek/ppbg==}
 
   language-subtag-registry@0.3.23:
     resolution: {integrity: sha512-0K65Lea881pHotoGEa5gDlMxt3pctLi2RplBb7Ezh4rRdLEOtgi7n4EwK9lamnUCkKBqaeKRVebTq6BAxSkpXQ==}
@@ -10169,6 +10175,8 @@ snapshots:
   kind-of@6.0.3: {}
 
   kleur@3.0.3: {}
+
+  klinecharts@10.0.0: {}
 
   language-subtag-registry@0.3.23: {}
 

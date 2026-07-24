@@ -200,7 +200,13 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
           <p className={`mt-1 text-xs font-semibold ${netFlow >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{netFlow >= 0 ? "+" : "−"}{money(Math.abs(netFlow))}</p>
         </div>
       </div>
-      <TokenChart data={snapshot.chart}/>
+      <TokenChart
+        data={snapshot.chart}
+        trades={snapshot.trades}
+        tokenName={token.name}
+        ticker={token.ticker}
+        totalSupply={token.totalSupply}
+      />
       {error && <div className="mt-3"><WarningBox>{error}</WarningBox></div>}
     </div>
 

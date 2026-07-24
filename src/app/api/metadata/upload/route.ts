@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
       description: field(form, "description"),
       website: field(form, "website"),
       x: field(form, "x"),
+      telegram: field(form, "telegram"),
     } satisfies TokenMetadataInput);
     const imageEntry = form.get("image");
     const image = imageEntry instanceof File && imageEntry.size > 0 ? imageEntry : null;

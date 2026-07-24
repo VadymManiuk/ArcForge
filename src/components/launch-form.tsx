@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { AtSign, Check, ChevronRight, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, X } from "lucide-react";
-import { decodeEventLog, formatUnits, publicActions, type Address, type Hash } from "viem";
+import { AtSign, Check, ChevronDown, ChevronRight, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
+import { decodeEventLog, formatUnits, parseUnits, publicActions, type Address, type Hash } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
 import {
@@ -10,7 +10,7 @@ import {
   DEFAULT_VIRTUAL_USDC_RESERVE,
   calculateCurveEconomics,
 } from "@/lib/bonding-curve";
-import { erc20Abi, factoryAbi } from "@/lib/contracts";
+import { bondingCurveAbi, erc20Abi, factoryAbi } from "@/lib/contracts";
 import {
   TOKEN_DESCRIPTION_MAX_LENGTH,
   TOKEN_IMAGE_INPUT_MAX_BYTES,
@@ -28,11 +28,13 @@ type FormData = {
   description: string;
   website: string;
   x: string;
+  telegram: string;
   allocation: string;
+  developerBuy: string;
 };
 
-type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching";
-type LaunchResult = { token: Address; curve: Address; hash: Hash; metadataURI: string; metadataURL: string };
+type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "initial_buy_approving" | "initial_buy";
+type LaunchResult = { token: Address; curve: Address; hash: Hash; metadataURI: string; metadataURL: string; initialBuyHash?: Hash; initialBuyError?: string };
 type UploadedMetadata = { commitment: string; metadataURI: string; gatewayURL: string };
 
 const defaults: FormData = {
@@ -41,7 +43,9 @@ const defaults: FormData = {
   description: "",
   website: "",
   x: "",
+  telegram: "",
   allocation: "5",
+  developerBuy: "0",
 };
 const confirmations = [
   "Fixed supply with no hidden mint",
@@ -124,6 +128,7 @@ async function optimizeImage(file: File) {
 export function LaunchForm() {
   const descriptionId = useId();
   const [step, setStep] = useState(1);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [form, setForm] = useState(defaults);
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
@@ -158,7 +163,8 @@ export function LaunchForm() {
     description: form.description,
     website: form.website,
     x: form.x,
-  }), [form.name, form.ticker, form.description, form.website, form.x]);
+    telegram: form.telegram,
+  }), [form.name, form.ticker, form.description, form.website, form.x, form.telegram]);
 
   const identityValid = useMemo(() => {
     try {
@@ -168,10 +174,18 @@ export function LaunchForm() {
       return false;
     }
   }, [metadataInput, storageStatus]);
+  const developerBuyMax = useMemo(() => {
+    const curveTokens = 1_000_000_000 * (1 - (Number(form.allocation) || 0) / 100);
+    const maximumTokens = 50_000_000;
+    if (curveTokens <= maximumTokens) return 0;
+    const netUsdc = DEFAULT_VIRTUAL_USDC_RESERVE * maximumTokens / (curveTokens - maximumTokens);
+    return Math.floor(netUsdc / 0.99 * 100) / 100;
+  }, [form.allocation]);
   const canContinue = step === 1
     ? identityValid && !imageProcessing
     : step === 2
       ? Number(form.allocation) >= 0 && Number(form.allocation) <= 20
+        && Number(form.developerBuy) >= 0 && Number(form.developerBuy) <= developerBuyMax
       : checks.length === confirmations.length;
   const isPending = status !== "idle";
   const curveEconomics = useMemo(() => calculateCurveEconomics({
@@ -242,6 +256,7 @@ export function LaunchForm() {
     body.append("description", normalized.description);
     body.append("website", normalized.website);
     body.append("x", normalized.x);
+    body.append("telegram", normalized.telegram);
     if (image) body.append("image", image);
     const uploadResponse = await fetch("/api/metadata/upload", { method: "POST", body });
     const upload = await uploadResponse.json() as { metadataURI?: string; gatewayURL?: string; error?: string };
@@ -278,8 +293,10 @@ export function LaunchForm() {
         functionName: "balanceOf",
         args: [address],
       }));
-      if (balance < LAUNCH_FEE) {
-        throw new Error(`You have ${formatUnits(balance, 6)} USDC, but the launch fee is 25 USDC. Add testnet USDC and retry.`);
+      const developerBuy = parseUnits(form.developerBuy || "0", 6);
+      const requiredBalance = LAUNCH_FEE + developerBuy;
+      if (balance < requiredBalance) {
+        throw new Error(`You have ${formatUnits(balance, 6)} USDC, but launch plus developer buy requires ${formatUnits(requiredBalance, 6)} USDC.`);
       }
 
       const metadata = await ensureMetadata(address);
@@ -331,6 +348,46 @@ export function LaunchForm() {
         }
       }
       if (!launched) throw new Error("The launch succeeded, but its TokenLaunched event was not found.");
+      if (developerBuy > 0n) {
+        try {
+          const curveAllowance = await withRpcRetry(() => transactionClient.readContract({
+            address: ARC_TESTNET_CONTRACTS.usdc,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [address, launched!.curve],
+          }));
+          if (curveAllowance < developerBuy) {
+            setStatus("initial_buy_approving");
+            const approvalHash = await writeContractAsync({
+              address: ARC_TESTNET_CONTRACTS.usdc,
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [launched.curve, developerBuy],
+            });
+            const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
+            if (approvalReceipt.status !== "success") throw new Error("Developer buy approval reverted onchain.");
+          }
+          const [tokensOut] = await withRpcRetry(() => transactionClient.readContract({
+            address: launched!.curve,
+            abi: bondingCurveAbi,
+            functionName: "quoteBuy",
+            args: [developerBuy],
+          }));
+          if (tokensOut <= 0n) throw new Error("The curve returned no tokens for the developer buy.");
+          setStatus("initial_buy");
+          const initialBuyHash = await writeContractAsync({
+            address: launched.curve,
+            abi: bondingCurveAbi,
+            functionName: "buy",
+            args: [developerBuy, tokensOut * 95n / 100n],
+          });
+          const initialBuyReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: initialBuyHash }));
+          if (initialBuyReceipt.status !== "success") throw new Error("Developer buy reverted onchain.");
+          launched.initialBuyHash = initialBuyHash;
+        } catch (buyError) {
+          launched.initialBuyError = `Token launched successfully, but the optional developer buy did not complete: ${transactionError(buyError)}`;
+        }
+      }
       setResult(launched);
       window.dispatchEvent(new CustomEvent("arcforge:launch-confirmed", {
         detail: { tokenAddress: launched.token, curveAddress: launched.curve, transactionHash: launchHash },
@@ -371,7 +428,9 @@ export function LaunchForm() {
         <ResultRow label="Bonding curve" address={result.curve} />
         <ResultLink label="Metadata" href={result.metadataURL} value={result.metadataURI.slice(0, 22) + "…"} />
         <ResultLink label="Transaction" href={`${EXPLORER_URL}/tx/${result.hash}`} value={shortAddress(result.hash)} />
+        {result.initialBuyHash && <ResultLink label="Developer buy" href={`${EXPLORER_URL}/tx/${result.initialBuyHash}`} value={shortAddress(result.initialBuyHash)} />}
       </dl>
+      {result.initialBuyError && <p className="mx-auto mt-4 max-w-lg rounded-xl border border-amber-400/20 bg-amber-400/[.07] p-3 text-left text-xs leading-5 text-amber-100">{result.initialBuyError}</p>}
       <Button className="mt-6" onClick={reset}>Create another</Button>
     </div>;
   }
@@ -386,6 +445,10 @@ export function LaunchForm() {
           ? "Approving 25 USDC…"
           : status === "launching"
             ? "Launching on Arc…"
+            : status === "initial_buy_approving"
+              ? "Approving developer buy…"
+              : status === "initial_buy"
+                ? "Executing developer buy…"
             : step === 3 ? "Launch on Arc Testnet" : "Continue";
 
   return <form onSubmit={submit} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -411,9 +474,10 @@ export function LaunchForm() {
           <textarea id={descriptionId} className="input min-h-28 resize-none py-3" required maxLength={TOKEN_DESCRIPTION_MAX_LENGTH} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="What is this token and what should holders know?" />
           <span className="mt-1.5 block text-right text-[10px] text-slate-600">{form.description.length}/{TOKEN_DESCRIPTION_MAX_LENGTH}</span>
         </label>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <Field icon={<Globe className="size-4" />} label="Website (optional)" value={form.website} onChange={(value) => update("website", value)} placeholder="yourproject.xyz" maxLength={200} />
           <Field icon={<AtSign className="size-4" />} label="X / Twitter (optional)" value={form.x} onChange={(value) => update("x", value)} placeholder="@yourproject" maxLength={200} />
+          <Field icon={<Send className="size-4" />} label="Telegram (optional)" value={form.telegram} onChange={(value) => update("telegram", value)} placeholder="t.me/community" maxLength={200} />
         </div>
         {storageStatus === "unavailable" && <WarningBox>Media storage is not configured yet. Launching with a public token profile is temporarily disabled.</WarningBox>}
         <p className="text-[11px] leading-5 text-slate-500">Images are resized to 1024 px and converted to WebP before upload. Metadata is public and content-addressed on IPFS; the contract stores only its immutable CID.</p>
@@ -421,13 +485,22 @@ export function LaunchForm() {
 
       {step === 2 && <div className="grid gap-5">
         <div><p className="eyebrow">02 · Economics</p><h2 className="mt-2 text-xl font-semibold">Configure transparent terms</h2></div>
-        <Field label="Creator allocation %" value={form.allocation} onChange={(value) => update("allocation", value)} type="number" min="0" max="20" step="0.01" />
+        <Field label="Developer buy · USDC (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
+        <p className="-mt-3 text-[11px] text-slate-500">Executed immediately after launch. Maximum {developerBuyMax.toLocaleString()} USDC so the developer purchase cannot exceed 5% of total supply. Requires a separate approval and buy transaction.</p>
+        <button type="button" onClick={() => setAdvancedOpen((value) => !value)} className="flex items-center justify-between rounded-xl border border-line bg-black/20 px-4 py-3 text-left text-sm text-slate-300">
+          <span><span className="block font-medium text-white">Advanced</span><span className="mt-1 block text-[11px] text-slate-500">Creator allocation and curve details</span></span>
+          <ChevronDown className={`size-4 transition ${advancedOpen ? "rotate-180" : ""}`} />
+        </button>
+        {advancedOpen && <div className="grid gap-4 rounded-xl border border-line bg-black/20 p-4">
+          <Field label="Creator allocation %" value={form.allocation} onChange={(value) => update("allocation", value)} type="number" min="0" max="20" step="0.01" />
+          <p className="text-[11px] leading-5 text-slate-500">Direct fixed-supply allocation to the creator wallet. It is separate from the developer buy and always visible in token risk metrics.</p>
+        </div>}
         <div className="rounded-xl border border-line bg-black/20 p-4">
           <p className="label">Creator wallet</p>
           <p className="break-all font-mono text-xs text-slate-300">{address ?? "Connect a wallet in the header"}</p>
           <p className="mt-2 text-[11px] text-slate-500">The factory assigns the creator allocation to the wallet that signs the launch.</p>
         </div>
-        <WarningBox>The contract enforces a maximum 20% creator allocation. Supply is fixed at deployment and the remaining tokens fund the curve.</WarningBox>
+        <WarningBox>Graduation occurs at 10,000 real USDC. The contract enforces fixed supply, a maximum 20% creator allocation, capped buys, and permanent liquidity with no withdrawal function.</WarningBox>
         <div className="grid gap-3 sm:grid-cols-3">
           <EconomicsMetric label="Curve sold at graduation" value={`${curveEconomics.curveInventorySoldPercent.toFixed(0)}%`} />
           <EconomicsMetric label="Permanent LP TVL" value={`$${curveEconomics.permanentLiquidityTvl.toLocaleString()}`} />
@@ -442,7 +515,7 @@ export function LaunchForm() {
           <input type="checkbox" className="accent-cyan" checked={checks.includes(item)} onChange={() => setChecks((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item])} />
           {item}
         </label>)}</div>
-        <WarningBox>Rabby will first request a free metadata signature. If needed, it will then request a 25 USDC approval followed by the launch transaction.</WarningBox>
+        <WarningBox>Rabby will request a free metadata signature, the 25 USDC launch-fee approval, and the launch transaction. If developer buy is above zero, an additional curve approval and buy follow after launch.</WarningBox>
       </div>}
 
       {error && <p role="alert" className="mt-5 rounded-xl border border-rose-400/20 bg-rose-400/[.07] p-3 text-xs leading-5 text-rose-200">{error}</p>}
@@ -461,11 +534,13 @@ export function LaunchForm() {
         <div className="min-w-0"><p className="truncate font-semibold text-white">{form.name || "Untitled token"}</p><p className="font-mono text-xs text-slate-500">{form.ticker || "TICKER"}</p></div>
       </div>
       {form.description && <p className="mt-4 line-clamp-3 text-xs leading-5 text-slate-500">{form.description}</p>}
-      {(form.website || form.x) && <div className="mt-4 flex flex-wrap gap-2">{form.website && <PreviewTag icon={<Globe className="size-3" />} label="Website" />}{form.x && <PreviewTag icon={<AtSign className="size-3" />} label="X" />}</div>}
+      {(form.website || form.x || form.telegram) && <div className="mt-4 flex flex-wrap gap-2">{form.website && <PreviewTag icon={<Globe className="size-3" />} label="Website" />}{form.x && <PreviewTag icon={<AtSign className="size-3" />} label="X" />}{form.telegram && <PreviewTag icon={<Send className="size-3" />} label="Telegram" />}</div>}
       <dl className="mt-6 grid gap-3 text-xs">
         <Row label="Supply" value="1,000,000,000" />
         <Row label="Creator allocation" value={`${form.allocation || 0}%`} />
         <Row label="Curve target" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
+        <Row label="Developer buy" value={`${Number(form.developerBuy || 0).toLocaleString()} USDC`} />
+        <Row label="Curve inventory sold" value="80%" />
         <Row label="Permanent LP TVL" value={`≈ ${curveEconomics.permanentLiquidityTvl.toLocaleString()} USDC`} />
         <Row label="Launch fee" value="25 USDC" />
         <Row label="Buy / sell fee" value="1% / 1%" />

@@ -281,6 +281,7 @@ export async function publishTokenMetadata({
       standard: "ArcOrigin Token Metadata v1",
       ...(normalized.website ? { website: normalized.website } : {}),
       ...(normalized.x ? { x: normalized.x } : {}),
+      ...(normalized.telegram ? { telegram: normalized.telegram } : {}),
     },
   };
   const metadataFile = new File([JSON.stringify(metadata)], `${stem}.json`, { type: "application/json" });

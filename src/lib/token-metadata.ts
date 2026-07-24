@@ -10,6 +10,7 @@ export type TokenMetadataInput = {
   description: string;
   website: string;
   x: string;
+  telegram: string;
 };
 
 export class TokenMetadataValidationError extends Error {}
@@ -63,6 +64,27 @@ export function normalizeXUrl(value: string) {
   return `https://x.com/${handle}`;
 }
 
+export function normalizeTelegramUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.length > TOKEN_URL_MAX_LENGTH) throw new TokenMetadataValidationError("Telegram link is too long.");
+  const handleCandidate = trimmed.replace(/^@/, "");
+  if (/^[A-Za-z0-9_]{5,32}$/.test(handleCandidate)) return `https://t.me/${handleCandidate}`;
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new TokenMetadataValidationError("Enter a valid Telegram community or @handle.");
+  }
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const handle = url.pathname.split("/").filter(Boolean)[0] ?? "";
+  if (!["t.me", "telegram.me"].includes(host) || !/^[A-Za-z0-9_]{5,32}$/.test(handle)) {
+    throw new TokenMetadataValidationError("Enter a t.me community link or @handle.");
+  }
+  return `https://t.me/${handle}`;
+}
+
 export function validateTokenMetadataInput(input: TokenMetadataInput): TokenMetadataInput {
   const name = input.name.trim();
   const symbol = input.symbol.trim().toUpperCase();
@@ -78,6 +100,7 @@ export function validateTokenMetadataInput(input: TokenMetadataInput): TokenMeta
     description,
     website: normalizeWebsiteUrl(input.website),
     x: normalizeXUrl(input.x),
+    telegram: normalizeTelegramUrl(input.telegram),
   };
 }
 
@@ -88,6 +111,7 @@ export function canonicalMetadataCommitment(input: TokenMetadataInput, imageSha2
     description: input.description,
     website: input.website,
     x: input.x,
+    telegram: input.telegram,
     imageSha256,
   });
 }

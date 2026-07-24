@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AtSign, ExternalLink, Globe, RefreshCw, ShieldCheck } from "lucide-react";
+import { AtSign, ExternalLink, Globe, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import { useAccount } from "wagmi";
 import { PnlShareCard } from "@/components/pnl-share-card";
 import { KLineTokenChart } from "@/components/kline-token-chart";
@@ -340,6 +340,7 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
           <div className="mt-4 flex flex-wrap gap-2">
             {token.socials.website && <InfoLink href={token.socials.website} icon={<Globe className="size-3.5"/>} label="Website"/>}
             {token.socials.x && <InfoLink href={token.socials.x} icon={<AtSign className="size-3.5"/>} label="X / Twitter"/>}
+            {token.socials.telegram && <InfoLink href={token.socials.telegram} icon={<Send className="size-3.5"/>} label="Telegram"/>}
             <InfoLink href={`${EXPLORER_URL}/address/${token.address}`} icon={<ExternalLink className="size-3.5"/>} label="Arcscan"/>
           </div>
           <div className="mt-6 flex flex-wrap gap-2">{token.riskLabels.map((label) => <Badge key={label} tone={label.includes("high") || label.includes("missing") ? "bad" : "good"}><ShieldCheck className="mr-1 size-3"/>{label.replaceAll("_", " ")}</Badge>)}</div>

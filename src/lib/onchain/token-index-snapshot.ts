@@ -94,6 +94,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
       socials: {
         website: metadata?.website ?? cached.socials.website,
         x: metadata?.x ?? cached.socials.x,
+        telegram: metadata?.telegram ?? cached.socials.telegram,
       },
       creatorProfile: { ...cached.creatorProfile, launches: creatorLaunches },
     };
@@ -200,7 +201,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     recentTrades: [],
     riskLabels: risk.labels,
     creatorProfile,
-    socials: { website: metadata?.website, x: metadata?.x },
+    socials: { website: metadata?.website, x: metadata?.x, telegram: metadata?.telegram },
   };
   state.hydratedTokens.set(cacheKey, token);
   return token;

@@ -1,5 +1,5 @@
-export const DEFAULT_VIRTUAL_USDC_RESERVE = 10_000;
-export const DEFAULT_GRADUATION_THRESHOLD = 40_000;
+export const DEFAULT_VIRTUAL_USDC_RESERVE = 2_500;
+export const DEFAULT_GRADUATION_THRESHOLD = 10_000;
 export const GRADUATION_RESERVE_MULTIPLIER = 4;
 
 export function usesPermanentLiquidityMode(virtualUsdcReserve: number | undefined, graduationThreshold: number) {

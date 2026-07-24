@@ -4,7 +4,7 @@ import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import { calculateRiskScore } from "@/lib/scoring";
-import { normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
+import { normalizeTelegramUrl, normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
 import type { CreatorProfile, TokenData } from "@/lib/types";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
@@ -40,6 +40,7 @@ type ClientMetadata = {
   image?: string;
   website?: string;
   x?: string;
+  telegram?: string;
 };
 
 const publicClient = createPublicClient({
@@ -144,11 +145,13 @@ async function loadMetadata(metadataURI: string): Promise<ClientMetadata | null>
       : {};
     const websiteValue = metadataText(payload.external_url, 200) ?? metadataText(properties.website, 200) ?? "";
     const xValue = metadataText(properties.x, 200) ?? "";
+    const telegramValue = metadataText(properties.telegram, 200) ?? "";
     return {
       description: metadataText(payload.description, 500),
       image: ipfsURL(metadataText(payload.image, 512) ?? "") || undefined,
       website: websiteValue ? normalizeWebsiteUrl(websiteValue) : undefined,
       x: xValue ? normalizeXUrl(xValue) : undefined,
+      telegram: telegramValue ? normalizeTelegramUrl(telegramValue) : undefined,
     };
   } catch {
     return null;
@@ -254,7 +257,7 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
     recentTrades: [],
     riskLabels: risk.labels,
     creatorProfile,
-    socials: { website: metadata?.website, x: metadata?.x },
+    socials: { website: metadata?.website, x: metadata?.x, telegram: metadata?.telegram },
   };
 }
 

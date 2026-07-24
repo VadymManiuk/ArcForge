@@ -1,6 +1,6 @@
 import "server-only";
 
-import { normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
+import { normalizeTelegramUrl, normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
 
 const MAX_METADATA_BYTES = 64 * 1024;
 const CACHE_LIMIT = 200;
@@ -14,6 +14,7 @@ export type ResolvedTokenMetadata = {
   image?: string;
   website?: string;
   x?: string;
+  telegram?: string;
 };
 
 declare global {
@@ -123,11 +124,13 @@ export async function resolveTokenMetadata(metadataURI: string): Promise<Resolve
     const imageURI = text(payload.image, 512) ?? "";
     const websiteValue = text(payload.external_url, 200) ?? text(properties.website, 200) ?? "";
     const xValue = text(properties.x, 200) ?? "";
+    const telegramValue = text(properties.telegram, 200) ?? "";
     const result: ResolvedTokenMetadata = {
       description: text(payload.description, 500),
       image: imageURI ? ipfsGatewayURL(imageURI) || undefined : undefined,
       website: websiteValue ? normalizeWebsiteUrl(websiteValue) : undefined,
       x: xValue ? normalizeXUrl(xValue) : undefined,
+      telegram: telegramValue ? normalizeTelegramUrl(telegramValue) : undefined,
     };
     cacheMetadata(metadataURI, result);
     return result;

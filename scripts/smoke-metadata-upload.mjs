@@ -10,6 +10,7 @@ const input = {
   description: "Integration test profile for the ArcOrigin token metadata upload flow.",
   website: "https://arcorigin.xyz/",
   x: "https://x.com/arcorigin",
+  telegram: "https://t.me/arcorigin",
 };
 const image = await sharp({
   create: { width: 64, height: 64, channels: 4, background: { r: 34, g: 211, b: 238, alpha: 1 } },

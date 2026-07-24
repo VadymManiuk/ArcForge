@@ -43,7 +43,7 @@ The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity na
 - `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
 - `MockUSDC`: unrestricted minting for local tests only.
 
-The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. New V3 launches use a 10,000 virtual-USDC reserve and graduate after raising 40,000 real USDC: 80% of curve inventory has then been sold, and the remaining inventory is rebalanced at the same price into 40,000 USDC of permanent two-sided liquidity (about 80,000 USDC TVL). Surplus tokens are irreversibly locked and the curve exposes no liquidity-withdrawal function. Tokens created by legacy Factories retain their original immutable behavior and remain indexed and tradeable through their deployed curves.
+The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Current V3 launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC: 80% of curve inventory has then been sold, and the remaining inventory is rebalanced at the same price into 10,000 USDC of permanent two-sided liquidity (about 20,000 USDC TVL). Surplus tokens are irreversibly locked and the curve exposes no liquidity-withdrawal function. Tokens created with earlier parameters retain their original immutable behavior and remain indexed and tradeable through their deployed curves.
 
 Launch metadata uses an immutable `ipfs://` CID stored by the token contract. The upload endpoint validates and optimizes images, requires a one-time wallet signature bound to the exact metadata payload, rate-limits uploads by wallet and client, and never exposes the storage credential to the browser.
 

@@ -24,7 +24,7 @@ const sections = [
   {
     title: "Graduate",
     items: [
-      ["Target", "The optimized curve graduates after 80% of its trading inventory is sold: 40,000 real USDC against a 10,000 virtual-USDC seed."],
+      ["Target", "Current launches graduate after 80% of trading inventory is sold: 10,000 real USDC against a 2,500 virtual-USDC seed."],
       ["Continuity", "Virtual liquidity is removed while token reserves are rebalanced at the same spot price, avoiding a migration price jump."],
       ["Permanent AMM", "Price-matched tokens and real USDC stay in the curve as permanent two-sided liquidity; there is no owner withdrawal function."],
     ],

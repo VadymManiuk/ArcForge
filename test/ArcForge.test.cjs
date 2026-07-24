@@ -35,8 +35,8 @@ function launchParams(overrides = {}) {
     metadataURI: "ipfs://forge-metadata",
     totalSupply: 1_000_000_000n * TOKEN,
     creatorAllocationBps: 500,
-    virtualUsdcReserve: 10_000n * USDC,
-    graduationThreshold: 40_000n * USDC,
+    virtualUsdcReserve: 2_500n * USDC,
+    graduationThreshold: 10_000n * USDC,
     ...overrides,
   };
 }

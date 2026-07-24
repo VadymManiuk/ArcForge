@@ -60,8 +60,8 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
       <InfoStat label="Curve inventory" value={curvePercent === undefined ? "—" : `${curvePercent.toFixed(2)}%`} />
       <InfoStat label="Permanent lock" value={lockPercent === undefined ? "—" : `${lockPercent.toFixed(2)}%`} />
       <InfoStat label="Supply" value={token.totalSupply ? number(token.totalSupply) : "—"} />
-      <InfoStat label="Token tax B / S" value="0% / 0%" />
-      <InfoStat label="Curve fee B / S" value="1% / 1%" />
+      <InfoStat label="Token transfer tax" value="None in token bytecode" />
+      <InfoStat label="Curve fee B / S" value="Verified in each quote" />
     </div>
 
     <div className="border-b border-line p-4">
@@ -133,7 +133,7 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
       <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-500">
         <span>Block {token.launchBlock ?? "—"}</span>
         <span>·</span>
-        <span>{token.creatorAllocationPercent ?? 0}% creator allocation</span>
+        <span>{token.creatorAllocationPercent === undefined ? "Creator allocation unavailable" : `${token.creatorAllocationPercent}% creator allocation`}</span>
       </div>
       {token.launchTxHash && <a
         href={`${EXPLORER_URL}/tx/${token.launchTxHash}`}

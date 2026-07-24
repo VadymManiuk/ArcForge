@@ -6,7 +6,7 @@ import { NetworkBanner } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: { default: "ArcOrigin — Launch and discover tokens on Arc", template: "%s · ArcOrigin" },
-  description: "USDC bonding curves, transparent fees, creator reputation, real-time charts, and risk labels for Arc-native tokens.",
+  description: "USDC bonding curves, transparent fees, verified creator history, real-time charts, and risk labels for Arc-native tokens.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

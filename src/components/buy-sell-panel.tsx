@@ -33,8 +33,9 @@ type TransactionFeeOverrides = {
   maxPriorityFeePerGas?: bigint;
 };
 const percentageOptions = [10, 25, 50, 75, 100] as const;
-const slippageOptions = [0.5, 1, 2, 5] as const;
+const slippageOptions = [10, 20, 40] as const;
 const priorityOptions: Priority[] = ["Low", "Medium", "High"];
+const MAX_SLIPPAGE_PERCENT = 50;
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -106,7 +107,7 @@ export function BuySellPanel({ token }: { token: TokenData }) {
 function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddress: Address }) {
   const [side, setSide] = useState<Side>("Buy");
   const [amount, setAmount] = useState("1");
-  const [slippage, setSlippage] = useState(1);
+  const [slippageInput, setSlippageInput] = useState("20");
   const [priority, setPriority] = useState<Priority>("Medium");
   const [quote, setQuote] = useState<LiveQuote | null>(null);
   const [status, setStatus] = useState<TransactionStatus>("idle");
@@ -130,6 +131,14 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
   const buyDisabled = side === "Buy" && token.status === "Graduated" && !permanentLiquidityMode;
   const activeBalance = side === "Buy" ? balances?.usdc : balances?.token;
+  const slippage = Number(slippageInput);
+  const slippageValid = Number.isFinite(slippage)
+    && slippage > 0
+    && slippage <= MAX_SLIPPAGE_PERCENT;
+  const quoteFeeBase = quote ? (side === "Buy" ? quote.input : quote.output + quote.fee) : 0n;
+  const quoteFeePercent = quote && quoteFeeBase > 0n
+    ? Number(quote.fee * 10_000n / quoteFeeBase) / 100
+    : null;
 
   const refreshBalances = useCallback(async () => {
     const requestId = ++balanceRequestRef.current;
@@ -182,7 +191,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     setQuote(null);
     setTransactionHash(null);
     setNotice("");
-  }, [amount, side, slippage]);
+  }, [amount, side, slippageInput]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void refreshBalances(), 1_500);
@@ -218,6 +227,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     setStatus("quoting");
     try {
       if (buyDisabled) throw new Error("New buys are closed after graduation. Existing holders can still sell against the remaining curve liquidity.");
+      if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
       const input = parseUnits(amount, inputDecimals);
       if (input <= 0n) throw new Error("Enter an amount greater than zero.");
       const client = await getClient();
@@ -344,19 +354,37 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       <div className="text-right"><Badge tone="good">Live onchain</Badge><p className="mt-1 font-mono text-[8px] text-slate-600">Arc Testnet</p></div>
     </div>
     <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
-    <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0">You pay</label><div className="flex items-center gap-3"><button type="button" disabled={!balanceError || balanceLoading} onClick={() => void refreshBalances()} className={`max-w-[170px] truncate text-[10px] disabled:cursor-default ${balanceError ? "text-cyan" : "text-slate-500"}`} title={balanceLabel}>{balanceLabel}</button><span className="flex items-center gap-1 text-[10px] text-slate-500"><Settings2 className="size-3" />{slippage}% · {priority}</span></div></div>
+    <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0">You pay</label><div className="flex items-center gap-3"><button type="button" disabled={!balanceError || balanceLoading} onClick={() => void refreshBalances()} className={`max-w-[170px] truncate text-[10px] disabled:cursor-default ${balanceError ? "text-cyan" : "text-slate-500"}`} title={balanceLabel}>{balanceLabel}</button><span className="flex items-center gap-1 text-[10px] text-slate-500"><Settings2 className="size-3" />{slippageValid ? `${slippage}%` : "Invalid"} · {priority}</span></div></div>
     <div className="mt-2 flex items-center rounded-xl border border-line bg-[#080c13] px-3 focus-within:border-cyan/50"><input inputMode="decimal" value={amount} disabled={isPending} onChange={(event) => setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none disabled:opacity-50" /><Badge tone="neutral">{inputSymbol}</Badge></div>
     <div className="mt-2 grid grid-cols-5 gap-1">{percentageOptions.map((percent) => <button key={percent} type="button" disabled={isPending || activeBalance === undefined || activeBalance === 0n} onClick={() => selectBalancePercent(percent)} className="h-8 rounded-lg border border-line bg-black/15 font-mono text-[10px] text-slate-400 transition hover:border-cyan/35 hover:text-cyan disabled:cursor-not-allowed disabled:opacity-35">{percent}%</button>)}</div>
     <div className="mt-3 grid gap-3 rounded-xl border border-line bg-black/15 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] text-slate-500">Slippage</span>
-        <div className="flex gap-1">{slippageOptions.map((value) => <button
-          key={value}
-          type="button"
-          disabled={isPending}
-          onClick={() => setSlippage(value)}
-          className={`h-7 rounded-md px-2 font-mono text-[9px] transition ${slippage === value ? "bg-cyan/12 text-cyan" : "text-slate-500 hover:bg-white/[.04] hover:text-slate-300"}`}
-        >{value}%</button>)}</div>
+        <div className="flex items-center gap-1">
+          {slippageOptions.map((value) => <button
+            key={value}
+            type="button"
+            disabled={isPending}
+            onClick={() => setSlippageInput(String(value))}
+            className={`h-7 rounded-md px-2 font-mono text-[9px] transition ${slippage === value ? "bg-cyan/12 text-cyan" : "text-slate-500 hover:bg-white/[.04] hover:text-slate-300"}`}
+          >{value}%</button>)}
+          <label className={`flex h-7 w-[72px] items-center rounded-md border px-2 font-mono text-[9px] ${
+            slippageValid ? "border-line text-slate-300 focus-within:border-cyan/40" : "border-rose-400/40 text-rose-300"
+          }`}>
+            <input
+              aria-label="Custom slippage percentage"
+              inputMode="decimal"
+              disabled={isPending}
+              value={slippageInput}
+              onChange={(event) => {
+                const next = event.target.value.replace(",", ".");
+                if (/^\d{0,2}(?:\.\d{0,2})?$/.test(next)) setSlippageInput(next);
+              }}
+              className="min-w-0 flex-1 bg-transparent text-right outline-none disabled:opacity-50"
+            />
+            <span className="ml-1 text-slate-500">%</span>
+          </label>
+        </div>
       </div>
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] text-slate-500">Priority</span>
@@ -372,8 +400,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     <div className="relative my-3 flex justify-center"><span className="grid size-7 place-items-center rounded-full border border-line bg-panel text-slate-500"><ArrowDown className="size-3" /></span></div>
     <label className="label">Expected output</label>
     <div className="flex h-14 items-center justify-between rounded-xl border border-line bg-[#080c13] px-3"><span className="text-xl font-semibold text-white">{quote ? displayUnits(quote.output, outputDecimals) : "—"}</span><Badge tone="cyan">{outputSymbol}</Badge></div>
-    <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.fee, 6)} USDC` : "1.00%"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Transaction priority</dt><dd className="text-slate-300">{priority}</dd></div></dl>
-    <Button className="w-full" disabled={isPending || buyDisabled} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
+    <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">{quote && quoteFeePercent !== null ? `${displayUnits(quote.fee, 6)} USDC · ${quoteFeePercent.toFixed(2)}%` : "Read from curve with quote"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Transaction priority</dt><dd className="text-slate-300">{priority}</dd></div></dl>
+    <Button className="w-full" disabled={isPending || buyDisabled || !slippageValid} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
     {notice && <p className={`mt-3 rounded-lg p-2 text-[11px] leading-4 ${transactionHash ? "bg-emerald-400/[.07] text-emerald-300" : "bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
     <p className="mt-4 text-[11px] leading-5 text-slate-500">{token.status === "Graduated"
       ? permanentLiquidityMode

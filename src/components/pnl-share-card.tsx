@@ -15,40 +15,28 @@ type PnlMetrics = {
   holdingValue: number;
   pnl: number;
   pnlPercent: number;
-  personal: boolean;
 };
 
-function calculateMetrics(token: TokenData, snapshot: MarketSnapshot, wallet?: string): PnlMetrics {
+function calculateMetrics(snapshot: MarketSnapshot, wallet?: string): PnlMetrics | null {
   const walletTrades = wallet
     ? snapshot.trades.filter((trade) => trade.wallet.toLowerCase() === wallet.toLowerCase())
     : [];
-  if (wallet && walletTrades.length > 0) {
-    const bought = walletTrades.filter((trade) => trade.type === "Buy").reduce((sum, trade) => sum + trade.usdc, 0);
-    const sold = walletTrades.filter((trade) => trade.type === "Sell").reduce((sum, trade) => sum + trade.usdc, 0);
-    const holdingTokens = Math.max(0, walletTrades.reduce(
-      (sum, trade) => sum + (trade.type === "Buy" ? trade.tokens : -trade.tokens),
-      0,
-    ));
-    const holdingValue = holdingTokens * snapshot.price;
-    const pnl = sold + holdingValue - bought;
-    return {
-      bought,
-      sold,
-      holdingTokens,
-      holdingValue,
-      pnl,
-      pnlPercent: bought > 0 ? pnl / bought * 100 : 0,
-      personal: true,
-    };
-  }
+  if (!wallet || walletTrades.length === 0) return null;
+  const bought = walletTrades.filter((trade) => trade.type === "Buy").reduce((sum, trade) => sum + trade.usdc, 0);
+  const sold = walletTrades.filter((trade) => trade.type === "Sell").reduce((sum, trade) => sum + trade.usdc, 0);
+  const holdingTokens = Math.max(0, walletTrades.reduce(
+    (sum, trade) => sum + (trade.type === "Buy" ? trade.tokens : -trade.tokens),
+    0,
+  ));
+  const holdingValue = holdingTokens * snapshot.price;
+  const pnl = sold + holdingValue - bought;
   return {
-    bought: snapshot.volume,
-    sold: 0,
-    holdingTokens: 0,
-    holdingValue: snapshot.marketCap,
-    pnl: snapshot.priceChange,
-    pnlPercent: snapshot.priceChange,
-    personal: false,
+    bought,
+    sold,
+    holdingTokens,
+    holdingValue,
+    pnl,
+    pnlPercent: bought > 0 ? pnl / bought * 100 : 0,
   };
 }
 
@@ -58,7 +46,7 @@ function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, wi
   context.fill();
 }
 
-function drawShareCard(token: TokenData, snapshot: MarketSnapshot, metrics: PnlMetrics, wallet?: string) {
+function drawShareCard(token: TokenData, metrics: PnlMetrics, wallet?: string) {
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
   canvas.height = 630;
@@ -121,32 +109,24 @@ function drawShareCard(token: TokenData, snapshot: MarketSnapshot, metrics: PnlM
   context.fillText(token.name, 202, 199);
   context.fillStyle = "#84919f";
   context.font = "500 21px ui-monospace, monospace";
-  context.fillText(`${token.ticker} · ${wallet ? shortAddress(wallet) : "SINCE LAUNCH"}`, 202, 235);
+  context.fillText(`${token.ticker} · ${wallet ? shortAddress(wallet) : "WALLET UNAVAILABLE"}`, 202, 235);
 
   context.fillStyle = "#84919f";
   context.font = "600 16px ui-monospace, monospace";
-  context.fillText(metrics.personal ? "ESTIMATED ONCHAIN PNL" : "TOKEN PERFORMANCE", 84, 326);
+  context.fillText("ESTIMATED ONCHAIN PNL", 84, 326);
   context.fillStyle = accent;
   context.font = "800 86px Inter, sans-serif";
   const percent = `${positive ? "+" : ""}${metrics.pnlPercent.toFixed(2)}%`;
   context.fillText(percent, 78, 413);
-  if (metrics.personal) {
-    context.fillStyle = "#dfe8e5";
-    context.font = "600 24px Inter, sans-serif";
-    context.fillText(`${metrics.pnl >= 0 ? "+" : "−"}${money(Math.abs(metrics.pnl))}`, 84, 458);
-  }
+  context.fillStyle = "#dfe8e5";
+  context.font = "600 24px Inter, sans-serif";
+  context.fillText(`${metrics.pnl >= 0 ? "+" : "−"}${money(Math.abs(metrics.pnl))}`, 84, 458);
 
-  const stats = metrics.personal
-    ? [
-        ["INVESTED", money(metrics.bought)],
-        ["REALIZED", money(metrics.sold)],
-        ["HOLDING VALUE", money(metrics.holdingValue)],
-      ]
-    : [
-        ["PRICE", tokenPrice(snapshot.price)],
-        ["MARKET CAP", money(snapshot.marketCap, true)],
-        ["VOLUME", money(snapshot.volume, true)],
-      ];
+  const stats = [
+    ["INVESTED", money(metrics.bought)],
+    ["REALIZED", money(metrics.sold)],
+    ["HOLDING VALUE", money(metrics.holdingValue)],
+  ];
   stats.forEach(([label, value], index) => {
     const x = 650 + (index % 2) * 235;
     const y = 315 + Math.floor(index / 2) * 110;
@@ -160,7 +140,7 @@ function drawShareCard(token: TokenData, snapshot: MarketSnapshot, metrics: PnlM
 
   context.fillStyle = "#63717e";
   context.font = "500 15px Inter, sans-serif";
-  context.fillText(metrics.personal ? "Estimate from wallet curve trades · transfers may affect actual PnL" : "Performance from launch price · not financial advice", 84, 540);
+  context.fillText("Estimate from wallet curve trades · transfers may affect actual PnL", 84, 540);
   context.textAlign = "right";
   context.fillStyle = "#73ecc7";
   context.font = "600 18px ui-monospace, monospace";
@@ -174,19 +154,12 @@ function canvasBlob(canvas: HTMLCanvasElement) {
   });
 }
 
-function tokenPrice(value: number) {
-  if (!Number.isFinite(value)) return "—";
-  if (value < 0.000001) return `$${value.toFixed(10)}`;
-  if (value < 0.01) return `$${value.toFixed(8)}`;
-  return money(value);
-}
-
 export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: MarketSnapshot }) {
   const { address } = useAccount();
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState("");
-  const metrics = useMemo(() => calculateMetrics(token, snapshot, address), [address, snapshot, token]);
-  const positive = metrics.pnlPercent >= 0;
+  const metrics = useMemo(() => calculateMetrics(snapshot, address), [address, snapshot]);
+  const positive = (metrics?.pnlPercent ?? 0) >= 0;
 
   useEffect(() => {
     if (!open) return;
@@ -200,7 +173,8 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
   async function exportImage(mode: "copy" | "download") {
     setNotice("");
     try {
-      const blob = await canvasBlob(drawShareCard(token, snapshot, metrics, address));
+      if (!metrics) throw new Error("No confirmed wallet trades are available for a PnL card.");
+      const blob = await canvasBlob(drawShareCard(token, metrics, address));
       if (mode === "copy" && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         try {
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
@@ -239,13 +213,13 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-white">Share performance</p>
-            <p className="mt-0.5 text-[10px] text-slate-500">{metrics.personal ? "Estimated from your confirmed curve trades" : address ? "No wallet trades found — showing token performance" : "Connect a wallet for personal PnL"}</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">{metrics ? "Estimated from your confirmed curve trades" : address ? "No confirmed trades were found for this wallet" : "Connect a wallet for personal PnL"}</p>
           </div>
           <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="grid size-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[.05] hover:text-white"><X className="size-4" /></button>
         </div>
 
         <div className="p-4 sm:p-5">
-          <div className="relative aspect-[1200/630] overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_82%_18%,rgba(115,236,199,.15),transparent_34%),linear-gradient(135deg,#080d0e,#141125)] p-5 sm:p-7">
+          {metrics ? <div className="relative aspect-[1200/630] overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_82%_18%,rgba(115,236,199,.15),transparent_34%),linear-gradient(135deg,#080d0e,#141125)] p-5 sm:p-7">
             <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:32px_32px]" />
             <div className="relative flex h-full flex-col">
               <div className="flex items-start justify-between">
@@ -257,28 +231,24 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
                   <div className="grid size-11 place-items-center rounded-xl bg-cyan/10 font-mono text-xs font-semibold text-cyan sm:size-14">{token.icon}</div>
                   <div><p className="text-sm font-semibold text-white sm:text-xl">{token.name}</p><p className="font-mono text-[8px] text-slate-500 sm:text-[10px]">{token.ticker}</p></div>
                 </div>
-                <p className="mt-5 font-mono text-[7px] uppercase tracking-[.15em] text-slate-500 sm:text-[9px]">{metrics.personal ? "Estimated onchain PnL" : "Token performance"}</p>
+                <p className="mt-5 font-mono text-[7px] uppercase tracking-[.15em] text-slate-500 sm:text-[9px]">Estimated onchain PnL</p>
                 <p className={`mt-1 text-4xl font-bold tracking-tight sm:text-6xl ${positive ? "text-emerald-300" : "text-rose-300"}`}>{positive ? "+" : ""}{metrics.pnlPercent.toFixed(2)}%</p>
                 <div className="mt-4 grid grid-cols-3 gap-3 border-t border-white/10 pt-3">
-                  {(metrics.personal ? [
+                  {[
                     ["Invested", money(metrics.bought)],
                     ["Realized", money(metrics.sold)],
                     ["Holding value", money(metrics.holdingValue)],
-                  ] : [
-                    ["Price", tokenPrice(snapshot.price)],
-                    ["Market cap", money(snapshot.marketCap, true)],
-                    ["Volume", money(snapshot.volume, true)],
-                  ]).map(([label, value]) => <div key={label}><p className="font-mono text-[6px] uppercase text-slate-600 sm:text-[8px]">{label}</p><p className="mt-1 truncate text-[9px] font-semibold text-white sm:text-sm">{value}</p></div>)}
+                  ].map(([label, value]) => <div key={label}><p className="font-mono text-[6px] uppercase text-slate-600 sm:text-[8px]">{label}</p><p className="mt-1 truncate text-[9px] font-semibold text-white sm:text-sm">{value}</p></div>)}
                 </div>
               </div>
             </div>
-          </div>
-          <p className="mt-3 text-[10px] leading-4 text-slate-500">{metrics.personal ? "PnL is estimated from this wallet’s curve trades. Token transfers are not treated as buys or sells." : "This card shows performance from the onchain launch price, not personal profit."}</p>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          </div> : <div className="rounded-2xl border border-line bg-black/20 p-8 text-center"><p className="text-sm font-medium text-white">{address ? "No confirmed trades for this wallet" : "Wallet not connected"}</p><p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">{address ? "ArcOrigin will not invent a PnL value. A share card becomes available after an indexed buy or sell by this wallet." : "Connect the wallet that traded this token to calculate PnL from confirmed curve events."}</p></div>}
+          <p className="mt-3 text-[10px] leading-4 text-slate-500">PnL is estimated from this wallet’s confirmed curve trades. Token transfers are not treated as buys or sells, so transferred balances can make the estimate incomplete.</p>
+          {metrics && <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button onClick={() => void exportImage("copy")}><Copy className="size-4" />Copy image</Button>
             <Button variant="secondary" onClick={() => void exportImage("download")}><Download className="size-4" />Download PNG</Button>
             {notice && <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-300"><Check className="size-3.5" />{notice}</span>}
-          </div>
+          </div>}
         </div>
       </div>
     </div>}

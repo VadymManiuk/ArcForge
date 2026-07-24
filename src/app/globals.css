@@ -7,21 +7,35 @@
 html { background: #080a0b; scroll-behavior: smooth; }
 body {
   min-height: 100vh;
+  overflow-x: hidden;
   color: #f1f4f3;
   background:
     radial-gradient(800px 420px at 50% -120px, rgba(121, 231, 197, .08), transparent 68%),
     #080a0b;
   font-feature-settings: "ss01", "cv02", "cv03";
+  font-family: "Inter Variable", Inter, "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
   letter-spacing: -.01em;
+  text-rendering: optimizeLegibility;
 }
+button, input, textarea, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid rgba(121, 231, 197, .75);
+  outline-offset: 2px;
+}
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
 ::selection { color: #07100d; background: rgba(121,231,197,.8); }
+.skip-link { position: fixed; left: 1rem; top: -4rem; z-index: 100; border-radius: .75rem; background: #79e7c5; padding: .65rem 1rem; color: #07110e; font-size: .875rem; font-weight: 700; transition: top .15s ease; }
+.skip-link:focus { top: 1rem; }
 
 @layer components {
   .container-shell { @apply mx-auto w-full max-w-[1400px] px-4 md:px-6 lg:px-8; }
-  .panel { @apply rounded-2xl border border-line bg-panel shadow-glow; }
+  .panel { @apply rounded-2xl border border-line bg-panel shadow-glow; background-image: linear-gradient(145deg, rgba(255,255,255,.014), transparent 38%); }
   .eyebrow { @apply font-mono text-[10px] font-medium uppercase tracking-[.18em] text-cyan; }
   .muted { @apply text-sm text-slate-400; }
-  .input { @apply h-11 w-full rounded-xl border border-line bg-[#0b0e0f] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10; }
+  .input { @apply h-11 w-full rounded-xl border border-line bg-[#0b0e0f] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10; box-shadow: inset 0 1px rgba(255,255,255,.015); }
   .label { @apply mb-2 block text-xs font-medium text-slate-300; }
   .grid-line { background-image: linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px); background-size: 64px 64px; }
 }
@@ -29,3 +43,7 @@ body {
 .recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #242a2c; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #2a3133; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #394143; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

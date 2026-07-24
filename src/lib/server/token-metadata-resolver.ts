@@ -2,7 +2,7 @@ import "server-only";
 
 import { normalizeTelegramUrl, normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
 
-const MAX_METADATA_BYTES = 64 * 1024;
+const MAX_METADATA_BYTES = 2 * 1024 * 1024;
 const CACHE_LIMIT = 200;
 const SUCCESS_CACHE_TTL_MS = 60 * 60 * 1_000;
 const FAILURE_CACHE_TTL_MS = 60 * 1_000;
@@ -61,6 +61,10 @@ function text(value: unknown, maxLength: number) {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= maxLength
     ? value.trim()
     : undefined;
+}
+
+function descriptionText(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function cacheMetadata(key: string, value: ResolvedTokenMetadata | null) {
@@ -126,7 +130,7 @@ export async function resolveTokenMetadata(metadataURI: string): Promise<Resolve
     const xValue = text(properties.x, 200) ?? "";
     const telegramValue = text(properties.telegram, 200) ?? "";
     const result: ResolvedTokenMetadata = {
-      description: text(payload.description, 500),
+      description: descriptionText(payload.description),
       image: imageURI ? ipfsGatewayURL(imageURI) || undefined : undefined,
       website: websiteValue ? normalizeWebsiteUrl(websiteValue) : undefined,
       x: xValue ? normalizeXUrl(xValue) : undefined,

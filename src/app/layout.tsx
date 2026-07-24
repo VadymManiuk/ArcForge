@@ -12,7 +12,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en"><body className="antialiased">
-      <Providers><NetworkBanner /><Header /><main>{children}</main></Providers>
+      <a href="#main-content" className="skip-link">Skip to content</a>
+      <Providers><NetworkBanner /><Header /><main id="main-content">{children}</main></Providers>
     </body></html>
   );
 }

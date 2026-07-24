@@ -9,7 +9,13 @@ import { money } from "@/lib/utils";
 export function TokenScreener() {
   const { tokens: indexedTokens, loading, error, refresh, isCached, isPartial, cachedAt } = useFactoryTokenIndex();
   const tokens = indexedTokens;
-  const liveState = indexedTokens.length > 0 && isPartial ? "unavailable" : indexedTokens.length > 0 && isCached ? "cached" : loading ? "loading" : indexedTokens.length > 0 ? "live" : "unavailable";
+  const liveState = indexedTokens.length > 0 && isPartial
+    ? "unavailable"
+    : indexedTokens.length > 0 && (isCached || loading)
+      ? "cached"
+      : loading
+        ? "loading"
+        : indexedTokens.length > 0 ? "live" : "unavailable";
   const onchainVolume = indexedTokens.reduce((sum, token) => sum + token.volume24h, 0);
   const raised = indexedTokens.reduce((sum, token) => sum + token.raisedUSDC, 0);
   const trades = indexedTokens.reduce((sum, token) => sum + token.trades, 0);

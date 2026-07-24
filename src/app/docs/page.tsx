@@ -9,7 +9,7 @@ const sections = [
     items: [
       ["Token", "Fixed supply, no owner mint, blacklist, pause, or transfer tax."],
       ["Allocation", "The creator allocation is visible and capped at 20%."],
-      ["Cost", "Launching costs 25 USDC on Arc Testnet."],
+      ["Cost", "Launching costs 25 USDC. An optional developer buy is a separate USDC payment and a real curve trade."],
     ],
   },
   {
@@ -18,7 +18,7 @@ const sections = [
       ["Curve", "A virtual-USDC-reserve constant-product curve prices each trade."],
       ["Liquidity", "Real USDC liquidity is shown separately from virtual quote depth, so sell-side backing is never overstated."],
       ["Protection", "Quotes include minimum output so slippage is enforced onchain."],
-      ["Fees", "Buys and sells each charge a visible 1% protocol fee."],
+      ["Fees", "V4 buys and sells charge 1%: 70% is transferred to the token creator and 30% to the protocol FeeVault onchain."],
     ],
   },
   {
@@ -68,7 +68,7 @@ export default function DocsPage() {
         ))}
         <div className="lg:col-span-2">
           <WarningBox>
-            ArcOrigin is live on testnet, has not completed a mainnet audit, and is not financial advice. Legacy curves retain their original immutable graduation behavior; new permanent-liquidity curves use the hardened V3 model.
+            ArcOrigin is live on testnet, has not completed a mainnet audit, and is not financial advice. Legacy curves retain their original immutable fee and graduation behavior; V4 curves use the 70/30 creator fee split and permanent-liquidity model.
           </WarningBox>
         </div>
       </div>

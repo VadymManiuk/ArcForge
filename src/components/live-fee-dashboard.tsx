@@ -13,6 +13,7 @@ type FeeSnapshot = {
   launchFees: number;
   buyFees: number;
   sellFees: number;
+  creatorTradingFees: number;
   chart: RevenuePoint[];
   rows: FeeRow[];
   indexedBlock: string;
@@ -58,15 +59,16 @@ export function LiveFeeDashboard() {
   return <div className="container-shell pb-20">
     <div className="mb-3 flex justify-end gap-2"><Badge tone="neutral">Block {snapshot.indexedBlock}</Badge><Badge tone={loading || stale ? "neutral" : "good"}>{loading ? "Updating…" : stale ? "Last confirmed" : "Live FeeVault"}</Badge></div>
     {error && <div className="mb-5"><WarningBox>{error}</WarningBox></div>}
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       <StatCard label="Total collected" value={exactUsdc(snapshot.totalCollected)} detail="FeeReceived events"/>
       <StatCard label="Vault balance" value={exactUsdc(snapshot.vaultBalance)} detail="Current USDC balance"/>
       <StatCard label="Launch fees" value={money(snapshot.launchFees)} detail="25 USDC / launch"/>
-      <StatCard label="Trading fees" value={money(snapshot.buyFees + snapshot.sellFees)} detail="Buy and sell fees"/>
+      <StatCard label="Protocol trading fees" value={money(snapshot.buyFees + snapshot.sellFees)} detail="30% V4 protocol share"/>
+      <StatCard label="Creator earnings" value={money(snapshot.creatorTradingFees)} detail="70% V4 creator share"/>
     </div>
     <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_380px]">
       <Panel className="p-5"><div className="mb-5 flex items-center justify-between"><div><p className="eyebrow">Cumulative fees</p><h2 className="mt-2 text-lg font-semibold">Confirmed FeeReceived events</h2></div><Button variant="ghost" disabled={loading} onClick={() => void refresh(true)}>Refresh</Button></div><RevenueChart data={snapshot.chart}/></Panel>
-      <Panel className="p-5"><p className="eyebrow">Fee model</p><dl className="mt-5 grid gap-4 text-sm">{[["Launch fee", "25 USDC", "On token creation"], ["Buy fee", "1.00%", "Of USDC input"], ["Sell fee", "1.00%", "Of gross USDC output"], ["Graduation fee", "0 USDC", "Liquidity stays in the permanent curve AMM"]].map(([label, value, note]) => <div key={label} className="border-b border-line pb-3 last:border-0"><div className="flex justify-between"><dt className="text-slate-400">{label}</dt><dd className="font-medium text-white">{value}</dd></div><p className="mt-1 text-[10px] text-slate-600">{note}</p></div>)}</dl><div className="mt-5 rounded-xl border border-line bg-black/20 p-3"><p className="text-[10px] uppercase tracking-wider text-slate-600">Fee vault</p><div className="mt-2 flex items-center justify-between"><AddressPill address={ARC_TESTNET_CONTRACTS.feeVault}/><Badge tone="good">Deployed</Badge></div></div></Panel>
+      <Panel className="p-5"><p className="eyebrow">Fee model</p><dl className="mt-5 grid gap-4 text-sm">{[["Launch fee", "25 USDC", "On token creation"], ["Buy fee", "1.00%", "70% creator · 30% protocol on V4"], ["Sell fee", "1.00%", "70% creator · 30% protocol on V4"], ["Graduation fee", "0 USDC", "Liquidity stays in the permanent curve AMM"]].map(([label, value, note]) => <div key={label} className="border-b border-line pb-3 last:border-0"><div className="flex justify-between"><dt className="text-slate-400">{label}</dt><dd className="font-medium text-white">{value}</dd></div><p className="mt-1 text-[10px] text-slate-600">{note}</p></div>)}</dl><div className="mt-5 rounded-xl border border-line bg-black/20 p-3"><p className="text-[10px] uppercase tracking-wider text-slate-600">Fee vault</p><div className="mt-2 flex items-center justify-between"><AddressPill address={ARC_TESTNET_CONTRACTS.feeVault}/><Badge tone="good">Protocol share</Badge></div></div></Panel>
     </div>
     <Panel className="mt-5 overflow-hidden"><div className="border-b border-line p-5"><p className="eyebrow">FeeVault activity</p><h2 className="mt-2 text-lg font-semibold">Confirmed fee events</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs [&_td]:px-4 [&_th]:px-4"><thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="py-3">Block</th><th>Source</th><th>Amount</th><th>Payer / recipient</th><th>Transaction</th><th>Status</th></tr></thead><tbody>{snapshot.rows.map((row) => <tr key={`${row.transactionHash}-${row.logIndex}`} className="border-b border-line/60 last:border-0"><td className="py-3 text-slate-500">{row.blockNumber.toString()}</td><td><Badge tone={row.source === "Launch" ? "cyan" : row.source === "Buy" ? "good" : row.source === "Sell" ? "bad" : "neutral"}>{row.source}</Badge></td><td className={row.source === "Withdrawal" ? "text-rose-300" : "text-slate-300"}>{row.source === "Withdrawal" ? "−" : ""}{money(row.amount)}</td><td><AddressPill address={row.account}/></td><td><ArcscanLink hash={row.transactionHash}/></td><td><Badge tone="good">Onchain</Badge></td></tr>)}{snapshot.rows.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-500">No FeeReceived or FeeWithdrawn events found.</td></tr>}</tbody></table></div></Panel>
   </div>;

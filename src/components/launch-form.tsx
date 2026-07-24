@@ -12,7 +12,6 @@ import {
 } from "@/lib/bonding-curve";
 import { bondingCurveAbi, erc20Abi, factoryAbi } from "@/lib/contracts";
 import {
-  TOKEN_DESCRIPTION_MAX_LENGTH,
   TOKEN_IMAGE_INPUT_MAX_BYTES,
   TOKEN_IMAGE_MAX_BYTES,
   canonicalMetadataCommitment,
@@ -20,7 +19,7 @@ import {
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
 import { shortAddress } from "@/lib/utils";
-import { Button, Progress, WarningBox } from "./ui";
+import { Button, LinkButton, Progress, WarningBox } from "./ui";
 
 type FormData = {
   name: string;
@@ -181,6 +180,8 @@ export function LaunchForm() {
     const netUsdc = DEFAULT_VIRTUAL_USDC_RESERVE * maximumTokens / (curveTokens - maximumTokens);
     return Math.floor(netUsdc / 0.99 * 100) / 100;
   }, [form.allocation]);
+  const developerBuyAmount = Math.max(0, Number(form.developerBuy) || 0);
+  const totalWalletPayment = 25 + developerBuyAmount;
   const canContinue = step === 1
     ? identityValid && !imageProcessing
     : step === 2
@@ -431,7 +432,10 @@ export function LaunchForm() {
         {result.initialBuyHash && <ResultLink label="Developer buy" href={`${EXPLORER_URL}/tx/${result.initialBuyHash}`} value={shortAddress(result.initialBuyHash)} />}
       </dl>
       {result.initialBuyError && <p className="mx-auto mt-4 max-w-lg rounded-xl border border-amber-400/20 bg-amber-400/[.07] p-3 text-left text-xs leading-5 text-amber-100">{result.initialBuyError}</p>}
-      <Button className="mt-6" onClick={reset}>Create another</Button>
+      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+        <LinkButton href={`/tokens/${result.token}`}>Open token market</LinkButton>
+        <Button variant="secondary" onClick={reset}>Create another</Button>
+      </div>
     </div>;
   }
 
@@ -471,8 +475,7 @@ export function LaunchForm() {
         </div>
         <label htmlFor={descriptionId}>
           <span className="label">Description *</span>
-          <textarea id={descriptionId} className="input min-h-28 resize-none py-3" required maxLength={TOKEN_DESCRIPTION_MAX_LENGTH} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="What is this token and what should holders know?" />
-          <span className="mt-1.5 block text-right text-[10px] text-slate-600">{form.description.length}/{TOKEN_DESCRIPTION_MAX_LENGTH}</span>
+          <textarea id={descriptionId} className="input min-h-28 resize-y py-3" required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="What is this token and what should holders know?" />
         </label>
         <div className="grid gap-4 md:grid-cols-3">
           <Field icon={<Globe className="size-4" />} label="Website (optional)" value={form.website} onChange={(value) => update("website", value)} placeholder="yourproject.xyz" maxLength={200} />
@@ -485,8 +488,13 @@ export function LaunchForm() {
 
       {step === 2 && <div className="grid gap-5">
         <div><p className="eyebrow">02 · Economics</p><h2 className="mt-2 text-xl font-semibold">Configure transparent terms</h2></div>
-        <Field label="Developer buy · USDC (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
-        <p className="-mt-3 text-[11px] text-slate-500">Executed immediately after launch. Maximum {developerBuyMax.toLocaleString()} USDC so the developer purchase cannot exceed 5% of total supply. Requires a separate approval and buy transaction.</p>
+        <Field label="Developer buy · separate USDC payment (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
+        <p className="-mt-3 text-[11px] text-slate-500">Paid separately from the 25 USDC launch fee and executed as a real bonding-curve purchase after launch. Maximum {developerBuyMax.toLocaleString()} USDC, capped at 5% of supply.</p>
+        <dl className="grid gap-2 rounded-xl border border-line bg-black/20 p-4 text-xs">
+          <Row label="Launch fee" value="25 USDC" />
+          <Row label="Developer buy payment" value={`${developerBuyAmount.toLocaleString()} USDC`} />
+          <div className="mt-1 border-t border-line pt-3"><Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} /></div>
+        </dl>
         <button type="button" onClick={() => setAdvancedOpen((value) => !value)} className="flex items-center justify-between rounded-xl border border-line bg-black/20 px-4 py-3 text-left text-sm text-slate-300">
           <span><span className="block font-medium text-white">Advanced</span><span className="mt-1 block text-[11px] text-slate-500">Creator allocation and curve details</span></span>
           <ChevronDown className={`size-4 transition ${advancedOpen ? "rotate-180" : ""}`} />
@@ -539,11 +547,13 @@ export function LaunchForm() {
         <Row label="Supply" value="1,000,000,000" />
         <Row label="Creator allocation" value={`${form.allocation || 0}%`} />
         <Row label="Curve target" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
-        <Row label="Developer buy" value={`${Number(form.developerBuy || 0).toLocaleString()} USDC`} />
+        <Row label="Developer buy · separate payment" value={`${developerBuyAmount.toLocaleString()} USDC`} />
         <Row label="Curve inventory sold" value="80%" />
         <Row label="Permanent LP TVL" value={`≈ ${curveEconomics.permanentLiquidityTvl.toLocaleString()} USDC`} />
         <Row label="Launch fee" value="25 USDC" />
+        <Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} />
         <Row label="Buy / sell fee" value="1% / 1%" />
+        <Row label="Trading fee split" value="70% creator / 30% protocol" />
         <Row label="Network" value="Arc Testnet" />
         <Row label="Factory" value={shortAddress(ARC_TESTNET_CONTRACTS.factory)} />
       </dl>

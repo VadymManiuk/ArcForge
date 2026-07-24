@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Wallet, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { arcTestnet } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
@@ -43,6 +43,7 @@ function NavLink({ href, label, path, onClick }: { href: string; label: string; 
   return <Link
     href={href}
     onClick={onClick}
+    aria-current={active ? "page" : undefined}
     className={cn(
       "rounded-xl px-3.5 py-2 text-sm transition",
       active ? "bg-white/[.065] text-white" : "text-slate-400 hover:text-white",
@@ -53,11 +54,12 @@ function NavLink({ href, label, path, onClick }: { href: string; label: string; 
 export function Header() {
   const path = usePathname();
   const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [path]);
 
   return <header className="sticky top-0 z-50 border-b border-line bg-ink/90 backdrop-blur-xl">
     <div className="container-shell flex h-16 items-center justify-between">
       <Link href="/" className="flex items-center gap-2.5">
-        <span className="grid size-8 place-items-center rounded-xl bg-cyan text-sm font-bold text-[#07110e]">A</span>
+        <span className="grid size-8 place-items-center rounded-xl border border-cyan/25 bg-gradient-to-br from-cyan to-[#9aa7ff] text-sm font-extrabold text-[#07110e] shadow-[0_0_24px_rgba(121,231,197,.12)]">A</span>
         <span className="text-sm font-semibold tracking-[.14em] text-white">ARCORIGIN</span>
         <Badge tone="neutral" className="hidden sm:inline-flex">Testnet</Badge>
       </Link>

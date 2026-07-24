@@ -1,11 +1,19 @@
 import "server-only";
 
 import { createPublicClient, formatUnits, http, keccak256, parseAbiItem, toHex, type Address, type Hash } from "viem";
-import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_FIRST_LAUNCH_BLOCK, arcTestnet } from "@/lib/chains";
+import {
+  ARC_TESTNET_CONTRACTS,
+  ARC_TESTNET_FIRST_LAUNCH_BLOCK,
+  ARC_TESTNET_V4_FACTORY,
+  ARC_TESTNET_V4_FACTORY_BLOCK,
+  arcTestnet,
+} from "@/lib/chains";
 import { erc20Abi } from "@/lib/contracts";
 
 const feeReceivedEvent = parseAbiItem("event FeeReceived(address indexed asset, address indexed payer, bytes32 indexed feeType, uint256 amount)");
 const feeWithdrawnEvent = parseAbiItem("event FeeWithdrawn(address indexed asset, address indexed recipient, uint256 amount)");
+const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
+const feeSplitEvent = parseAbiItem("event FeeSplit(address indexed payer, bytes32 indexed feeType, address indexed creator, uint256 creatorAmount, uint256 protocolAmount)");
 const feeTypes = {
   [keccak256(toHex("LAUNCH_FEE"))]: "Launch",
   [keccak256(toHex("BUY_FEE"))]: "Buy",
@@ -29,6 +37,7 @@ export type FeeSnapshot = {
   launchFees: number;
   buyFees: number;
   sellFees: number;
+  creatorTradingFees: number;
   chart: Array<{ block: string; revenue: number }>;
   rows: FeeRow[];
   indexedBlock: string;
@@ -112,6 +121,37 @@ async function loadFeeSnapshot(): Promise<FeeSnapshot> {
     args: [ARC_TESTNET_CONTRACTS.feeVault],
     blockNumber: indexedBlock,
   }));
+  const v4Curves: Address[] = [];
+  for (let fromBlock = ARC_TESTNET_V4_FACTORY_BLOCK; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+    const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
+    const launches = await withRpcRetry(() => publicClient.getLogs({
+      address: ARC_TESTNET_V4_FACTORY,
+      event: tokenLaunchedEvent,
+      fromBlock,
+      toBlock,
+    }));
+    for (const launch of launches) {
+      if (launch.args.curve) v4Curves.push(launch.args.curve);
+    }
+  }
+  let creatorTradingFees = 0;
+  for (let offset = 0; offset < v4Curves.length; offset += 50) {
+    const curves = v4Curves.slice(offset, offset + 50);
+    for (let fromBlock = ARC_TESTNET_V4_FACTORY_BLOCK; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+      const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
+      const splits = await withRpcRetry(() => publicClient.getLogs({
+        address: curves,
+        event: feeSplitEvent,
+        fromBlock,
+        toBlock,
+      }));
+      for (const split of splits) {
+        creatorTradingFees = roundUsdc(
+          creatorTradingFees + Number(formatUnits(split.args.creatorAmount ?? 0n, 6)),
+        );
+      }
+    }
+  }
 
   const receivedRows: FeeRow[] = [];
   const withdrawalRows: FeeRow[] = [];
@@ -163,6 +203,7 @@ async function loadFeeSnapshot(): Promise<FeeSnapshot> {
     launchFees: amountFor("Launch"),
     buyFees: amountFor("Buy"),
     sellFees: amountFor("Sell"),
+    creatorTradingFees,
     chart,
     rows,
     indexedBlock: indexedBlock.toString(),

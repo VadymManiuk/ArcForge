@@ -154,6 +154,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   if (!baseToken) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
   if (!baseToken.curveAddress
     || baseToken.launchBlock === undefined
+    || baseToken.launchedAt === undefined
     || baseToken.totalSupply === undefined
     || baseToken.creatorAllocationPercent === undefined
     || baseToken.virtualUsdcReserve === undefined) {
@@ -163,7 +164,7 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   const launch = {
     curve: baseToken.curveAddress as Address,
     launchBlock: BigInt(baseToken.launchBlock),
-    launchedAt: baseToken.launchedAt ?? Math.floor(Date.now() / 1_000),
+    launchedAt: baseToken.launchedAt,
   };
 
   const events: IndexedTrade[] = [];

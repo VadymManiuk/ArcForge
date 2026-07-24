@@ -5,7 +5,7 @@ import { EXPLORER_URL } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 
 export function NetworkBanner() {
-  return <div className="border-b border-line bg-[#0b0e0f] py-1.5 text-center text-[11px] text-slate-400"><span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-400 align-middle"/>Arc Testnet · verified Factory launches and trades only</div>;
+  return <div className="border-b border-line bg-[#0b0e0f] px-3 py-1.5 text-center text-[10px] font-medium tracking-wide text-slate-400 sm:text-[11px]"><span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-400 align-middle"/>Arc Testnet · verified Factory launches and trades only</div>;
 }
 
 export function Button({ className, variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
@@ -28,7 +28,7 @@ export function SectionHeading({ eyebrow, title, body, action }: { eyebrow?: str
   return <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div>{eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}<h2 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">{title}</h2>{body && <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">{body}</p>}</div>{action}</div>;
 }
 
-export function AddressPill({ address }: { address: string }) { return <code className="rounded-lg border border-line bg-black/20 px-2 py-1 text-[11px] text-slate-400">{shortAddress(address)}</code>; }
+export function AddressPill({ address }: { address: string }) { return <code className="min-w-0 truncate rounded-lg border border-line bg-black/20 px-2 py-1 text-[11px] text-slate-400" title={address}>{shortAddress(address)}</code>; }
 export function ArcscanLink({ hash, label }: { hash: string; label?: string }) { return <a href={`${EXPLORER_URL}/tx/${hash}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan hover:underline">{label ?? shortAddress(hash)} <ExternalLink className="size-3" /></a>; }
 
 export function WarningBox({ children }: { children: ReactNode }) { return <div className="flex gap-3 rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-xs leading-5 text-amber-100/75"><TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />{children}</div>; }
@@ -44,7 +44,7 @@ export function TokenIcon({ label, image, className }: { label: string; image?: 
   </div>;
 }
 
-export function Progress({ value }: { value: number }) { return <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, value)}%` }} /></div>; }
+export function Progress({ value }: { value: number }) { return <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))}%` }} /></div>; }
 
 export function PageIntro({ eyebrow, title, body, children }: { eyebrow: string; title: string; body: string; children?: ReactNode }) {
   return <div className="container-shell pb-8 pt-10 md:pb-10 md:pt-14"><div className="max-w-2xl"><p className="eyebrow mb-3">{eyebrow}</p><h1 className="text-3xl font-semibold tracking-[-.04em] text-white sm:text-4xl md:text-5xl">{title}</h1><p className="mt-4 text-sm leading-6 text-slate-400 md:text-base md:leading-7">{body}</p>{children}</div></div>;

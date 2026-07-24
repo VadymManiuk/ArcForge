@@ -6,6 +6,12 @@ import { WarningBox } from "./ui";
 
 export function HomeMarket() {
   const { tokens: indexedTokens, loading, error, isCached, isPartial } = useFactoryTokenIndex();
-  const onchainState = isPartial ? "unavailable" : isCached ? "cached" : loading ? "loading" : indexedTokens.length > 0 ? "live" : "unavailable";
+  const onchainState = isPartial
+    ? "unavailable"
+    : indexedTokens.length > 0 && (isCached || loading)
+      ? "cached"
+      : loading
+        ? "loading"
+        : indexedTokens.length > 0 ? "live" : "unavailable";
   return <>{error && <div className="mb-4"><WarningBox>{isCached && indexedTokens.length > 0 ? `Showing the last confirmed cached snapshot. ${error}` : error}</WarningBox></div>}<TokenTable tokens={indexedTokens} compact onchainState={onchainState}/></>;
 }

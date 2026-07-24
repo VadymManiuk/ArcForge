@@ -96,26 +96,38 @@ describe("ArcForgeFactory and ArcForgeToken", function () {
 describe("ArcForgeBondingCurve", function () {
   it("quotes and executes buys and sells while collecting transparent fees", async function () {
     const platform = await deployPlatform();
-    const { trader, usdc, vault } = platform;
+    const { creator, trader, usdc, vault } = platform;
     const { token, curve } = await launch(platform);
+    expect(await curve.creatorFeeRecipient()).to.equal(creator.address);
+    expect(await curve.CREATOR_FEE_SHARE_BPS()).to.equal(7_000n);
     const amountIn = 1_000n * USDC;
     const [quotedTokens, buyFee] = await curve.quoteBuy(amountIn);
     expect(quotedTokens).to.be.greaterThan(0);
     expect(buyFee).to.equal(10n * USDC);
 
+    const creatorBalanceBeforeBuy = await usdc.balanceOf(creator.address);
     await usdc.connect(trader).approve(await curve.getAddress(), amountIn);
-    await expect(curve.connect(trader).buy(amountIn, quotedTokens)).to.emit(curve, "TokenBought");
+    await expect(curve.connect(trader).buy(amountIn, quotedTokens))
+      .to.emit(curve, "FeeSplit")
+      .withArgs(trader.address, await curve.BUY_FEE(), creator.address, 7n * USDC, 3n * USDC);
     expect(await token.balanceOf(trader.address)).to.equal(quotedTokens);
+    expect(await usdc.balanceOf(creator.address) - creatorBalanceBeforeBuy).to.equal(7n * USDC);
     expect(await vault.getFeeTotal(await usdc.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("BUY_FEE"))))
-      .to.equal(buyFee);
+      .to.equal(3n * USDC);
 
     const tokenIn = quotedTokens / 2n;
     const [quotedUsdc, sellFee] = await curve.quoteSell(tokenIn);
+    const creatorBalanceBeforeSell = await usdc.balanceOf(creator.address);
     await token.connect(trader).approve(await curve.getAddress(), tokenIn);
-    await expect(curve.connect(trader).sell(tokenIn, quotedUsdc)).to.emit(curve, "TokenSold");
+    await expect(curve.connect(trader).sell(tokenIn, quotedUsdc)).to.emit(curve, "FeeSplit");
     expect(quotedUsdc).to.be.greaterThan(0);
+    const expectedSellProtocolFee = sellFee * 3_000n / 10_000n;
+    const expectedSellCreatorFee = sellFee - expectedSellProtocolFee;
+    expect(await usdc.balanceOf(creator.address) - creatorBalanceBeforeSell).to.equal(expectedSellCreatorFee);
     expect(await vault.getFeeTotal(await usdc.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("SELL_FEE"))))
-      .to.equal(sellFee);
+      .to.equal(expectedSellProtocolFee);
+    expect(await curve.totalCreatorFees()).to.equal(7n * USDC + expectedSellCreatorFee);
+    expect(await curve.totalProtocolFees()).to.equal(3n * USDC + expectedSellProtocolFee);
   });
 
   it("enforces amount and slippage checks", async function () {

@@ -4,12 +4,12 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 
 ## Current status
 
-- Frontend: real Arc Testnet approval/launch flow with typed mock/indexed market-data boundaries.
+- Frontend: real Arc Testnet approval, launch, trade, chart, holder, and fee flows backed by confirmed onchain data.
 - Contracts: deployed to Arc Testnet; source is tested but not independently audited.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
 - Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
-Demo market data, token addresses, transactions, holder metrics, and revenue figures are clearly labeled in the UI. Nothing in this repository is an audit claim or investment advice.
+The production interface does not insert simulated token listings or trading activity. Nothing in this repository is an audit claim or investment advice.
 
 ## Local development
 
@@ -37,13 +37,13 @@ pnpm build
 The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity names. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
 
 - `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
-- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. V3 curves graduate into a permanent real-reserve AMM without a spot-price jump, so both buys and sells continue.
+- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. Current V4 curves split trading fees onchain and graduate into a permanent real-reserve AMM without a spot-price jump, so both buys and sells continue.
 - `ArcForgeFactory`: validates launches, collects a fixed launch fee, deploys token and curve, records creators.
 - `ArcForgeFeeVault`: pulls and records real ERC-20 fees by source; withdraws only to the visible recipient.
 - `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
 - `MockUSDC`: unrestricted minting for local tests only.
 
-The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. Current V3 launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC: 80% of curve inventory has then been sold, and the remaining inventory is rebalanced at the same price into 10,000 USDC of permanent two-sided liquidity (about 20,000 USDC TVL). Surplus tokens are irreversibly locked and the curve exposes no liquidity-withdrawal function. Tokens created with earlier parameters retain their original immutable behavior and remain indexed and tradeable through their deployed curves.
+The MVP sets a 20% maximum creator allocation, a 25 USDC launch fee, and 1% buy/sell fees. V4 splits each trading fee onchain: 70% is transferred directly to the creator and 30% goes to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC: 80% of curve inventory has then been sold, and the remaining inventory is rebalanced at the same price into 10,000 USDC of permanent two-sided liquidity (about 20,000 USDC TVL). Surplus tokens are irreversibly locked and the curve exposes no liquidity-withdrawal function. Tokens created with earlier parameters retain their original immutable behavior and remain indexed and tradeable through their deployed curves.
 
 Launch metadata uses an immutable `ipfs://` CID stored by the token contract. The upload endpoint validates and optimizes images, requires a one-time wallet signature bound to the exact metadata payload, rate-limits uploads by wallet and client, and never exposes the storage credential to the browser.
 
@@ -59,11 +59,11 @@ pnpm verify:arc-testnet
 
 The deployment script refuses placeholders and writes a gitignored local manifest. The public testnet manifest contains no secrets. Arcscan source verification and an independent audit are still required before any mainnet use.
 
-Factory-only upgrades use separate deployment and activation commands so the new Factory can be inspected and the dual-factory indexer deployed before `CreatorRegistry` is changed:
+Factory-only upgrades use separate deployment and activation commands so the new Factory can be inspected and the multi-factory indexer deployed before `CreatorRegistry` is changed:
 
 ```bash
-pnpm deploy:arc-testnet:v2
-pnpm deploy:arc-testnet:v2:activate
+pnpm deploy:arc-testnet:v4
+pnpm deploy:arc-testnet:v4:activate
 ```
 
 ## VPS deployment

@@ -14,6 +14,7 @@ contract ArcForgeFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint16 public constant MAX_CREATOR_ALLOCATION_BPS = 2_000;
+    uint16 public constant CREATOR_FEE_SHARE_BPS = 7_000;
     uint256 public constant GRADUATION_RESERVE_MULTIPLIER = 4;
     uint256 public constant MAX_NAME_BYTES = 64;
     uint256 public constant MAX_SYMBOL_BYTES = 10;
@@ -109,7 +110,7 @@ contract ArcForgeFactory is Ownable, ReentrancyGuard {
         );
         uint256 curveAllocation = params.totalSupply - creatorAllocation;
         ArcForgeBondingCurve launchedCurve = new ArcForgeBondingCurve(
-            address(launchedToken), address(usdc), address(feeVault), curveAllocation,
+            address(launchedToken), address(usdc), address(feeVault), msg.sender, curveAllocation,
             params.virtualUsdcReserve, params.graduationThreshold, buyFeeBps, sellFeeBps
         );
         IERC20(address(launchedToken)).safeTransfer(address(launchedCurve), curveAllocation);

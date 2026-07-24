@@ -130,6 +130,10 @@ function metadataText(value: unknown, maxLength: number) {
     : undefined;
 }
 
+function metadataDescription(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 async function loadMetadata(metadataURI: string): Promise<ClientMetadata | null> {
   const url = ipfsURL(metadataURI);
   if (!url) return null;
@@ -147,7 +151,7 @@ async function loadMetadata(metadataURI: string): Promise<ClientMetadata | null>
     const xValue = metadataText(properties.x, 200) ?? "";
     const telegramValue = metadataText(properties.telegram, 200) ?? "";
     return {
-      description: metadataText(payload.description, 500),
+      description: metadataDescription(payload.description),
       image: ipfsURL(metadataText(payload.image, 512) ?? "") || undefined,
       website: websiteValue ? normalizeWebsiteUrl(websiteValue) : undefined,
       x: xValue ? normalizeXUrl(xValue) : undefined,

@@ -137,11 +137,15 @@ async function loadFactoryTokens(
   onMarketLoaded?: (tokens: TokenData[], marketDataError: unknown, stale: boolean) => void,
 ) {
   const indexPath = `/api/onchain/tokens${forceRefresh ? "?refresh=1" : ""}`;
-  const indexResult = await Promise.any([
-    loadClientTokenIndex((snapshot) => onIndexLoaded?.(snapshot.tokens, false))
-      .then((snapshot) => ({ snapshot, stale: false })),
-    loadServerSnapshot<TokenIndexSnapshot>(indexPath),
-  ]);
+  let indexResult: { snapshot: TokenIndexSnapshot; stale: boolean };
+  try {
+    indexResult = await loadServerSnapshot<TokenIndexSnapshot>(indexPath);
+  } catch {
+    indexResult = {
+      snapshot: await loadClientTokenIndex((snapshot) => onIndexLoaded?.(snapshot.tokens, false)),
+      stale: false,
+    };
+  }
   if (!includeMarketData) return { tokens: indexResult.snapshot.tokens, marketDataError: null, stale: indexResult.stale };
   onIndexLoaded?.(indexResult.snapshot.tokens, indexResult.stale);
 
@@ -149,12 +153,12 @@ async function loadFactoryTokens(
   const marketTokens = await mapWithConcurrency(indexResult.snapshot.tokens, 2, async (base) => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
     try {
-      const snapshot = await loadIndexedMarketSnapshot(base, BigInt(indexResult.snapshot.indexedBlock));
-      return applySnapshot(base, snapshot);
+      const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);
+      return applySnapshot(base, marketResult.snapshot);
     } catch (loadError) {
       try {
-        const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);
-        return applySnapshot(base, marketResult.snapshot);
+        const snapshot = await loadIndexedMarketSnapshot(base, BigInt(indexResult.snapshot.indexedBlock));
+        return applySnapshot(base, snapshot);
       } catch (fallbackError) {
         marketDataError ??= fallbackError ?? loadError;
         return base;

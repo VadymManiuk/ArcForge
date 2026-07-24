@@ -64,6 +64,7 @@ function transactionError(error: unknown) {
   if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(message)) {
     return "Arc RPC is temporarily unavailable. Check Rabby activity or Arcscan before retrying because the transaction may already have been submitted.";
   }
+  if (/User rejected|User denied|rejected the request/i.test(message)) return "The request was cancelled in your wallet.";
   return message;
 }
 
@@ -82,7 +83,7 @@ function inputUnits(value: bigint, decimals: number) {
 
 async function estimatePriorityFees(client: PublicClient, priority: Priority): Promise<TransactionFeeOverrides> {
   try {
-    const multiplier = priority === "Low" ? 90n : priority === "High" ? 150n : 110n;
+    const multiplier = priority === "Low" ? 100n : priority === "High" ? 150n : 110n;
     const fees = await client.estimateFeesPerGas();
     const maxPriorityFeePerGas = fees.maxPriorityFeePerGas === undefined
       ? undefined
@@ -112,10 +113,12 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const [quote, setQuote] = useState<LiveQuote | null>(null);
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [notice, setNotice] = useState("");
+  const [noticeIsError, setNoticeIsError] = useState(false);
   const [transactionHash, setTransactionHash] = useState<Hash | null>(null);
   const [balances, setBalances] = useState<WalletBalances | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState(false);
+  const [creatorFeeShareBps, setCreatorFeeShareBps] = useState<number | null>(null);
   const submissionLockRef = useRef(false);
   const balanceRequestRef = useRef(0);
   const { address, isConnected, chainId } = useAccount();
@@ -139,6 +142,23 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const quoteFeePercent = quote && quoteFeeBase > 0n
     ? Number(quote.fee * 10_000n / quoteFeeBase) / 100
     : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!publicClient) return;
+    void publicClient.readContract({
+      address: curveAddress,
+      abi: bondingCurveAbi,
+      functionName: "CREATOR_FEE_SHARE_BPS",
+    }).then((value) => {
+      if (!cancelled) setCreatorFeeShareBps(Number(value));
+    }).catch(() => {
+      if (!cancelled) setCreatorFeeShareBps(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [curveAddress, publicClient]);
 
   const refreshBalances = useCallback(async () => {
     const requestId = ++balanceRequestRef.current;
@@ -191,6 +211,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     setQuote(null);
     setTransactionHash(null);
     setNotice("");
+    setNoticeIsError(false);
   }, [amount, side, slippageInput]);
 
   useEffect(() => {
@@ -223,6 +244,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
 
   async function requestQuote() {
     setNotice("");
+    setNoticeIsError(false);
     setTransactionHash(null);
     setStatus("quoting");
     try {
@@ -254,6 +276,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       setNotice("Onchain quote ready. Review the output, then confirm the trade.");
     } catch (error) {
       setNotice(transactionError(error));
+      setNoticeIsError(true);
     } finally {
       setStatus("idle");
     }
@@ -265,6 +288,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     submissionLockRef.current = true;
     setStatus("preparing");
     setNotice("");
+    setNoticeIsError(false);
     setTransactionHash(null);
     try {
       const client = await getClient();
@@ -311,6 +335,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       if (receipt.status !== "success") throw new Error(`${side} transaction reverted onchain.`);
       setTransactionHash(tradeHash);
       setNotice(`${side} confirmed on Arc Testnet.`);
+      setNoticeIsError(false);
       setQuote(null);
       await refreshBalances();
       window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
@@ -318,6 +343,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       }));
     } catch (error) {
       setNotice(transactionError(error));
+      setNoticeIsError(true);
     } finally {
       submissionLockRef.current = false;
       setStatus("idle");
@@ -400,9 +426,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     <div className="relative my-3 flex justify-center"><span className="grid size-7 place-items-center rounded-full border border-line bg-panel text-slate-500"><ArrowDown className="size-3" /></span></div>
     <label className="label">Expected output</label>
     <div className="flex h-14 items-center justify-between rounded-xl border border-line bg-[#080c13] px-3"><span className="text-xl font-semibold text-white">{quote ? displayUnits(quote.output, outputDecimals) : "—"}</span><Badge tone="cyan">{outputSymbol}</Badge></div>
-    <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Protocol fee</dt><dd className="text-slate-300">{quote && quoteFeePercent !== null ? `${displayUnits(quote.fee, 6)} USDC · ${quoteFeePercent.toFixed(2)}%` : "Read from curve with quote"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Transaction priority</dt><dd className="text-slate-300">{priority}</dd></div></dl>
+    <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Trading fee</dt><dd className="text-slate-300">{quote && quoteFeePercent !== null ? `${displayUnits(quote.fee, 6)} USDC · ${quoteFeePercent.toFixed(2)}%` : "Read from curve with quote"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Fee recipient</dt><dd className="text-slate-300">{creatorFeeShareBps === null ? "Legacy protocol curve" : `${creatorFeeShareBps / 100}% creator · ${(10_000 - creatorFeeShareBps) / 100}% protocol`}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Transaction priority</dt><dd className="text-slate-300">{priority}</dd></div></dl>
     <Button className="w-full" disabled={isPending || buyDisabled || !slippageValid} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
-    {notice && <p className={`mt-3 rounded-lg p-2 text-[11px] leading-4 ${transactionHash ? "bg-emerald-400/[.07] text-emerald-300" : "bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
+    {notice && <p role={noticeIsError ? "alert" : "status"} aria-live="polite" className={`mt-3 rounded-lg border p-2 text-[11px] leading-4 ${noticeIsError ? "border-rose-400/20 bg-rose-400/[.07] text-rose-200" : transactionHash ? "border-emerald-400/15 bg-emerald-400/[.07] text-emerald-300" : "border-cyan/15 bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
     <p className="mt-4 text-[11px] leading-5 text-slate-500">{token.status === "Graduated"
       ? permanentLiquidityMode
         ? "Graduated into permanent real-reserve liquidity. Both buys and sells continue with no liquidity withdrawal function."

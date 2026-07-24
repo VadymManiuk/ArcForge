@@ -15,6 +15,8 @@
     "deploy:arc-testnet:v2:activate": "hardhat run scripts/activate-factory-v2.cjs --network arcTestnet --config hardhat.config.cjs",
     "deploy:arc-testnet:v3": "hardhat run scripts/deploy-factory-v3.cjs --network arcTestnet --config hardhat.config.cjs",
     "deploy:arc-testnet:v3:activate": "hardhat run scripts/activate-factory-v3.cjs --network arcTestnet --config hardhat.config.cjs",
+    "deploy:arc-testnet:v4": "hardhat run scripts/deploy-factory-v4.cjs --network arcTestnet --config hardhat.config.cjs",
+    "deploy:arc-testnet:v4:activate": "hardhat run scripts/activate-factory-v4.cjs --network arcTestnet --config hardhat.config.cjs",
     "verify:arc-testnet": "hardhat run scripts/verify-deployment.cjs --network arcTestnet --config hardhat.config.cjs",
     "smoke:metadata-upload": "node scripts/smoke-metadata-upload.mjs",
     "test": "pnpm contracts:test"

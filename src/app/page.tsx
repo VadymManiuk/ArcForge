@@ -12,7 +12,7 @@ const principles = [
   {
     icon: CircleDollarSign,
     title: "USDC pricing",
-    body: "Every quote, reserve, protocol fee, and graduation target is shown in USDC.",
+    body: "Every quote, reserve, trading fee, and graduation target is shown in USDC.",
   },
   {
     icon: ShieldCheck,

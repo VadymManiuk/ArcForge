@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, Copy, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
-import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
+import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_V4_FACTORY, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
 import type { TokenData } from "@/lib/types";
 import { number, shortAddress, utcDateTime } from "@/lib/utils";
 import { Badge, Button, Progress, RiskBadge } from "./ui";
@@ -18,6 +18,7 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
   const { snapshot, loading, error, refresh } = useHolderSnapshot(token, true);
   const [copied, setCopied] = useState("");
   const factory = token.factoryAddress ?? factoryForLaunchBlock(token.launchBlock);
+  const isV4 = factory.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase();
   const addresses: AddressItem[] = [
     { label: "Token", address: token.address, description: "ERC-20 contract" },
     { label: "Curve", address: token.curveAddress, description: "Trading contract" },
@@ -61,7 +62,7 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
       <InfoStat label="Permanent lock" value={lockPercent === undefined ? "—" : `${lockPercent.toFixed(2)}%`} />
       <InfoStat label="Supply" value={token.totalSupply ? number(token.totalSupply) : "—"} />
       <InfoStat label="Token transfer tax" value="None in token bytecode" />
-      <InfoStat label="Curve fee B / S" value="Verified in each quote" />
+      <InfoStat label="Curve fee B / S" value={isV4 ? "1% / 1% · 70/30 split" : "Legacy protocol fee"} />
     </div>
 
     <div className="border-b border-line p-4">

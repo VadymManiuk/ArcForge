@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  AreaChart,
+  BarChart3,
+  Brush,
   Camera,
+  CandlestickChart,
   ChevronDown,
   Crosshair,
   Expand,
@@ -12,22 +16,26 @@ import {
   Focus,
   Minus,
   MoveVertical,
+  Redo2,
   Ruler,
   Settings2,
+  Sparkles,
   TrendingUp,
   Trash2,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { Chart as KLineChart, KLineData, OverlayCreate, Period } from "klinecharts";
+import type { CandleType, Chart as KLineChart, KLineData, Overlay, OverlayCreate, Period } from "klinecharts";
 import type { ChartPoint, Trade } from "@/lib/types";
 import { money } from "@/lib/utils";
 import { buildCandles, type ChartTimeframe } from "@/components/token-chart";
 
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
 type DisplayMode = "Price" | "MCap";
-type IndicatorName = "MA" | "EMA" | "VOL";
-type Tool = "cursor" | "straightLine" | "horizontalStraightLine" | "verticalStraightLine" | "arcMeasure";
+type IndicatorName = "MA" | "EMA" | "BOLL" | "SAR" | "VOL" | "MACD" | "RSI" | "KDJ";
+type Tool = "cursor" | "straightLine" | "rayLine" | "horizontalStraightLine" | "verticalStraightLine" | "parallelStraightLine" | "fibonacciLine" | "brush" | "arcMeasure";
+type SavedOverlay = Pick<Overlay, "name" | "points"> & Pick<OverlayCreate, "styles" | "extendData">;
 
 type TokenChartProps = {
   data: ChartPoint[];
@@ -35,6 +43,7 @@ type TokenChartProps = {
   compact?: boolean;
   tokenName?: string;
   ticker?: string;
+  tokenAddress?: string;
   totalSupply?: number;
 };
 
@@ -64,6 +73,10 @@ function toolLabel(tool: Tool) {
     case "straightLine": return "Trend line";
     case "horizontalStraightLine": return "Horizontal line";
     case "verticalStraightLine": return "Vertical line";
+    case "rayLine": return "Ray";
+    case "parallelStraightLine": return "Parallel channel";
+    case "fibonacciLine": return "Fibonacci retracement";
+    case "brush": return "Brush";
     case "arcMeasure": return "Price and time measurement";
     default: return "Cursor";
   }
@@ -79,6 +92,7 @@ export function KLineTokenChart({
   compact = false,
   tokenName = "Token",
   ticker = "TOKEN",
+  tokenAddress = ticker,
   totalSupply = 1_000_000_000,
 }: TokenChartProps) {
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
@@ -86,17 +100,22 @@ export function KLineTokenChart({
   const [activeIndicators, setActiveIndicators] = useState<Set<IndicatorName>>(new Set(["VOL"]));
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chartTypeOpen, setChartTypeOpen] = useState(false);
+  const [chartType, setChartType] = useState<CandleType>("candle_solid");
   const [showGrid, setShowGrid] = useState(true);
   const [showMarkers, setShowMarkers] = useState(true);
   const [tool, setTool] = useState<Tool>("cursor");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [snapshot, setSnapshot] = useState("");
+  const [drawingHistory, setDrawingHistory] = useState<SavedOverlay[]>([]);
+  const [redoHistory, setRedoHistory] = useState<SavedOverlay[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<KLineChart | null>(null);
   const dataRef = useRef<KLineData[]>([]);
-  const indicatorIdsRef = useRef<Record<IndicatorName, string | null>>({ MA: null, EMA: null, VOL: null });
+  const indicatorIdsRef = useRef<Record<IndicatorName, string | null>>({ MA: null, EMA: null, BOLL: null, SAR: null, VOL: null, MACD: null, RSI: null, KDJ: null });
   const [ready, setReady] = useState(false);
+  const storageKey = `arc-origin-chart:${tokenAddress.toLowerCase()}:${displayMode.toLowerCase()}`;
 
   const sourceCandles = useMemo(() => buildCandles(data, compact ? "1h" : timeframe), [compact, data, timeframe]);
   const multiplier = displayMode === "MCap" ? totalSupply : 1;
@@ -203,7 +222,7 @@ export function KLineTokenChart({
       setReady(false);
       if (chartRef.current && disposeChart) disposeChart(chartRef.current);
       chartRef.current = null;
-      indicatorIdsRef.current = { MA: null, EMA: null, VOL: null };
+      indicatorIdsRef.current = { MA: null, EMA: null, BOLL: null, SAR: null, VOL: null, MACD: null, RSI: null, KDJ: null };
     };
   }, [compact, ticker]);
 
@@ -216,13 +235,20 @@ export function KLineTokenChart({
   useEffect(() => {
     const chart = chartRef.current;
     if (!ready || !chart) return;
-    for (const name of ["MA", "EMA", "VOL"] as const) {
+    chart.setStyles({ candle: { type: chartType } });
+  }, [chartType, ready]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!ready || !chart) return;
+    for (const name of ["MA", "EMA", "BOLL", "SAR", "VOL", "MACD", "RSI", "KDJ"] as const) {
       const existing = indicatorIdsRef.current[name];
       const enabled = activeIndicators.has(name);
       if (enabled && !existing) {
+        const overlayOnPrice = name === "MA" || name === "EMA" || name === "BOLL" || name === "SAR";
         indicatorIdsRef.current[name] = chart.createIndicator(
-          name === "VOL" ? name : { name, paneId: "candle_pane", calcParams: [20] },
-          name === "VOL",
+          overlayOnPrice ? { name, paneId: "candle_pane", ...(name === "MA" || name === "EMA" ? { calcParams: [20] } : {}) } : name,
+          !overlayOnPrice,
         );
       }
       if (!enabled && existing) {
@@ -231,6 +257,21 @@ export function KLineTokenChart({
       }
     }
   }, [activeIndicators, ready]);
+
+  useEffect(() => {
+    if (!ready || compact) return;
+    chartRef.current?.removeOverlay({ groupId: "arc-origin-drawings" });
+    setDrawingHistory([]);
+    setRedoHistory([]);
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as SavedOverlay[];
+      if (!Array.isArray(saved) || saved.length === 0) return;
+      chartRef.current?.createOverlay(saved.map((overlay) => ({ ...overlay, groupId: "arc-origin-drawings" })));
+      setDrawingHistory(saved);
+    } catch {
+      window.localStorage.removeItem(storageKey);
+    }
+  }, [compact, ready, storageKey]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -263,9 +304,22 @@ export function KLineTokenChart({
   const chooseTool = useCallback((nextTool: Tool) => {
     setTool(nextTool);
     if (nextTool === "cursor") return;
-    const overlay: OverlayCreate = { name: nextTool };
+    const overlay: OverlayCreate = {
+      name: nextTool,
+      groupId: "arc-origin-drawings",
+      onDrawEnd: ({ overlay: drawn }) => {
+        const saved: SavedOverlay = { name: drawn.name, points: drawn.points, styles: drawn.styles ?? undefined, extendData: drawn.extendData };
+        setDrawingHistory((current) => {
+          const next = [...current, saved];
+          window.localStorage.setItem(storageKey, JSON.stringify(next));
+          return next;
+        });
+        setRedoHistory([]);
+        setTool("cursor");
+      },
+    };
     chartRef.current?.createOverlay(overlay);
-  }, []);
+  }, [storageKey]);
 
   const toggleIndicator = useCallback((name: IndicatorName) => {
     setActiveIndicators((current) => {
@@ -282,7 +336,37 @@ export function KLineTokenChart({
     chart.scrollToRealTime();
     chart.setBarSpace(9);
   }, []);
-  const clearDrawings = useCallback(() => chartRef.current?.removeOverlay(), []);
+  const undoDrawing = useCallback(() => {
+    setDrawingHistory((current) => {
+      const removed = current.at(-1);
+      if (!removed) return current;
+      const next = current.slice(0, -1);
+      const latestOverlay = (chartRef.current?.getOverlays({ groupId: "arc-origin-drawings" }) ?? []).at(-1);
+      if (latestOverlay) chartRef.current?.removeOverlay({ id: latestOverlay.id });
+      setRedoHistory((redo) => [...redo, removed]);
+      window.localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
+  }, [storageKey]);
+  const redoDrawing = useCallback(() => {
+    setRedoHistory((current) => {
+      const restored = current.at(-1);
+      if (!restored) return current;
+      chartRef.current?.createOverlay({ ...restored, groupId: "arc-origin-drawings" });
+      setDrawingHistory((history) => {
+        const next = [...history, restored];
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+        return next;
+      });
+      return current.slice(0, -1);
+    });
+  }, [storageKey]);
+  const clearDrawings = useCallback(() => {
+    chartRef.current?.removeOverlay({ groupId: "arc-origin-drawings" });
+    setDrawingHistory([]);
+    setRedoHistory([]);
+    window.localStorage.removeItem(storageKey);
+  }, [storageKey]);
   const capture = useCallback(() => setSnapshot(chartRef.current?.getConvertPictureUrl(true, "png", "#111417") ?? ""), []);
   const toggleFullscreen = useCallback(async () => {
     if (!shellRef.current) return;
@@ -298,8 +382,28 @@ export function KLineTokenChart({
         {timeframes.map((item) => <ChartButton key={item} active={timeframe === item} onClick={() => setTimeframe(item)}>{item}</ChartButton>)}
         <span className="mx-1 h-5 w-px bg-line" />
         <div className="relative">
-          <ChartButton active={indicatorsOpen || activeIndicators.size > 1} onClick={() => { setIndicatorsOpen((value) => !value); setSettingsOpen(false); }}><Activity className="size-4" />Indicators<ChevronDown className="size-3" /></ChartButton>
-          {indicatorsOpen && <ChartMenu><Toggle label="Moving average" value="MA 20" active={activeIndicators.has("MA")} onClick={() => toggleIndicator("MA")} /><Toggle label="Exponential MA" value="EMA 20" active={activeIndicators.has("EMA")} onClick={() => toggleIndicator("EMA")} /><Toggle label="Volume" value="Onchain USDC" active={activeIndicators.has("VOL")} onClick={() => toggleIndicator("VOL")} /></ChartMenu>}
+          <ChartButton active={chartTypeOpen} onClick={() => { setChartTypeOpen((value) => !value); setIndicatorsOpen(false); setSettingsOpen(false); }}><CandlestickChart className="size-4" /><span className="sr-only">Chart type</span><ChevronDown className="size-3" /></ChartButton>
+          {chartTypeOpen && <ChartMenu>
+            <MenuItem label="Candles" active={chartType === "candle_solid"} icon={<CandlestickChart className="size-4" />} onClick={() => { setChartType("candle_solid"); setChartTypeOpen(false); }} />
+            <MenuItem label="Hollow candles" active={chartType === "candle_stroke"} icon={<Sparkles className="size-4" />} onClick={() => { setChartType("candle_stroke"); setChartTypeOpen(false); }} />
+            <MenuItem label="OHLC bars" active={chartType === "ohlc"} icon={<BarChart3 className="size-4" />} onClick={() => { setChartType("ohlc"); setChartTypeOpen(false); }} />
+            <MenuItem label="Area" active={chartType === "area"} icon={<AreaChart className="size-4" />} onClick={() => { setChartType("area"); setChartTypeOpen(false); }} />
+          </ChartMenu>}
+        </div>
+        <div className="relative">
+          <ChartButton active={indicatorsOpen || activeIndicators.size > 1} onClick={() => { setIndicatorsOpen((value) => !value); setSettingsOpen(false); setChartTypeOpen(false); }}><Activity className="size-4" />Indicators<ChevronDown className="size-3" /></ChartButton>
+          {indicatorsOpen && <ChartMenu>
+            <MenuSection>Price overlays</MenuSection>
+            <Toggle label="Moving average" value="MA 20" active={activeIndicators.has("MA")} onClick={() => toggleIndicator("MA")} />
+            <Toggle label="Exponential MA" value="EMA 20" active={activeIndicators.has("EMA")} onClick={() => toggleIndicator("EMA")} />
+            <Toggle label="Bollinger Bands" value="BOLL" active={activeIndicators.has("BOLL")} onClick={() => toggleIndicator("BOLL")} />
+            <Toggle label="Parabolic SAR" value="SAR" active={activeIndicators.has("SAR")} onClick={() => toggleIndicator("SAR")} />
+            <MenuSection>Lower panes</MenuSection>
+            <Toggle label="Volume" value="Onchain USDC" active={activeIndicators.has("VOL")} onClick={() => toggleIndicator("VOL")} />
+            <Toggle label="MACD" value="Momentum" active={activeIndicators.has("MACD")} onClick={() => toggleIndicator("MACD")} />
+            <Toggle label="RSI" value="Relative strength" active={activeIndicators.has("RSI")} onClick={() => toggleIndicator("RSI")} />
+            <Toggle label="KDJ" value="Stochastic oscillator" active={activeIndicators.has("KDJ")} onClick={() => toggleIndicator("KDJ")} />
+          </ChartMenu>}
         </div>
         <span className="mx-1 h-5 w-px bg-line" />
         {(["Price", "MCap"] as const).map((item) => <ChartButton key={item} active={displayMode === item} onClick={() => setDisplayMode(item)}>{item}</ChartButton>)}
@@ -308,7 +412,9 @@ export function KLineTokenChart({
         <IconButton label="Fit chart" onClick={fit}><Focus className="size-4" /></IconButton>
         <IconButton label="Zoom in" onClick={() => zoom(1.25)}><ZoomIn className="size-4" /></IconButton>
         <IconButton label="Zoom out" onClick={() => zoom(.8)}><ZoomOut className="size-4" /></IconButton>
-        <div className="relative"><IconButton label="Chart settings" active={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); setIndicatorsOpen(false); }}><Settings2 className="size-4" /></IconButton>{settingsOpen && <ChartMenu right><Toggle label="Grid" value="Chart grid" active={showGrid} onClick={() => setShowGrid((value) => !value)} /><Toggle label="Trade markers" value="Verified trades" active={showMarkers} onClick={() => setShowMarkers((value) => !value)} /></ChartMenu>}</div>
+        <IconButton label="Undo drawing" active={drawingHistory.length > 0} onClick={undoDrawing}><Undo2 className="size-4" /></IconButton>
+        <IconButton label="Redo drawing" active={redoHistory.length > 0} onClick={redoDrawing}><Redo2 className="size-4" /></IconButton>
+        <div className="relative"><IconButton label="Chart settings" active={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); setIndicatorsOpen(false); setChartTypeOpen(false); }}><Settings2 className="size-4" /></IconButton>{settingsOpen && <ChartMenu right><Toggle label="Grid" value="Chart grid" active={showGrid} onClick={() => setShowGrid((value) => !value)} /><Toggle label="Trade markers" value="Verified trades" active={showMarkers} onClick={() => setShowMarkers((value) => !value)} /></ChartMenu>}</div>
         <IconButton label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} active={isFullscreen} onClick={() => void toggleFullscreen()}><Expand className="size-4" /></IconButton>
         <IconButton label="Capture chart screenshot" onClick={capture}><Camera className="size-4" /></IconButton>
       </div>
@@ -317,8 +423,12 @@ export function KLineTokenChart({
       <aside className="flex flex-col items-center gap-1 border-r border-line bg-[#0e1114] py-2">
         <IconButton label="Crosshair cursor" active={tool === "cursor"} onClick={() => chooseTool("cursor")}><Crosshair className="size-4" /></IconButton>
         <IconButton label="Draw trend line" active={tool === "straightLine"} onClick={() => chooseTool("straightLine")}><TrendingUp className="size-4" /></IconButton>
+        <IconButton label="Draw ray" active={tool === "rayLine"} onClick={() => chooseTool("rayLine")}><TrendingUp className="size-4 rotate-12" /></IconButton>
         <IconButton label="Draw horizontal line" active={tool === "horizontalStraightLine"} onClick={() => chooseTool("horizontalStraightLine")}><Minus className="size-4" /></IconButton>
         <IconButton label="Draw vertical line" active={tool === "verticalStraightLine"} onClick={() => chooseTool("verticalStraightLine")}><MoveVertical className="size-4" /></IconButton>
+        <IconButton label="Draw parallel channel" active={tool === "parallelStraightLine"} onClick={() => chooseTool("parallelStraightLine")}><BarChart3 className="size-4 rotate-90" /></IconButton>
+        <IconButton label="Fibonacci retracement" active={tool === "fibonacciLine"} onClick={() => chooseTool("fibonacciLine")}><Activity className="size-4" /></IconButton>
+        <IconButton label="Freehand brush" active={tool === "brush"} onClick={() => chooseTool("brush")}><Brush className="size-4" /></IconButton>
         <IconButton label="Measure price and time" active={tool === "arcMeasure"} onClick={() => chooseTool("arcMeasure")}><Ruler className="size-4" /></IconButton>
         <span className="my-1 h-px w-6 bg-line" />
         <IconButton label="Show trade markers" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}>{showMarkers ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</IconButton>
@@ -332,7 +442,7 @@ export function KLineTokenChart({
         <div ref={containerRef} className={isFullscreen ? "h-[calc(100vh-112px)] min-h-[480px] w-full" : "h-[480px] w-full"} aria-label="ArcOrigin onchain candlestick chart" />
       </div>
     </div>
-    <div className="flex min-h-10 items-center justify-between border-t border-line bg-[#0e1114] px-3 py-1"><span className="font-mono text-[10px] text-slate-500">Only verified Arc Testnet factory and curve events</span><div className="flex items-center gap-1"><ChartButton onClick={moveToLatest}>Latest</ChartButton><IconButton label="Reset chart" onClick={fit}><Focus className="size-3.5" /></IconButton></div></div>
+    <div className="flex min-h-10 items-center justify-between border-t border-line bg-[#0e1114] px-3 py-1"><span className="font-mono text-[10px] text-slate-500">Verified Arc Testnet data · drawings saved on this device</span><div className="flex items-center gap-1"><ChartButton onClick={moveToLatest}>Latest</ChartButton><IconButton label="Reset chart" onClick={fit}><Focus className="size-3.5" /></IconButton></div></div>
     {snapshot && <div role="dialog" aria-label="Chart screenshot preview" className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4">
       <div className="w-full max-w-5xl rounded-2xl border border-line bg-[#11161a] p-4">
         <div className="mb-3 flex justify-between"><b className="text-white">{ticker} chart</b><button type="button" onClick={() => setSnapshot("")} className="text-xs text-slate-400">Close</button></div>
@@ -347,5 +457,7 @@ export function KLineTokenChart({
 
 function ChartButton({ active = false, children, onClick }: { active?: boolean; children: React.ReactNode; onClick: () => void }) { return <button type="button" aria-pressed={active} onClick={onClick} className={`inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium transition ${active ? "bg-cyan/15 text-[#a5f3d7]" : "text-slate-400 hover:bg-white/[.05] hover:text-white"}`}>{children}</button>; }
 function IconButton({ label, active = false, children, onClick }: { label: string; active?: boolean; children: React.ReactNode; onClick: () => void }) { return <button type="button" aria-label={label} aria-pressed={active} onClick={onClick} className={`grid size-8 place-items-center rounded-md transition ${active ? "bg-cyan/15 text-[#a5f3d7]" : "text-slate-400 hover:bg-white/[.05] hover:text-white"}`}>{children}</button>; }
-function ChartMenu({ children, right = false }: { children: React.ReactNode; right?: boolean }) { return <div className={`absolute top-10 z-40 w-56 rounded-lg border border-line bg-[#13191d] p-1.5 shadow-2xl ${right ? "right-0" : "left-0"}`}>{children}</div>; }
+function ChartMenu({ children, right = false }: { children: React.ReactNode; right?: boolean }) { return <div className={`absolute top-10 z-40 max-h-[420px] w-60 overflow-y-auto rounded-lg border border-line bg-[#13191d] p-1.5 shadow-2xl ${right ? "right-0" : "left-0"}`}>{children}</div>; }
+function MenuSection({ children }: { children: React.ReactNode }) { return <p className="px-2 pb-1 pt-2 font-mono text-[9px] uppercase tracking-[.18em] text-slate-600">{children}</p>; }
+function MenuItem({ label, active, icon, onClick }: { label: string; active: boolean; icon: React.ReactNode; onClick: () => void }) { return <button type="button" onClick={onClick} className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs ${active ? "bg-cyan/10 text-emerald-200" : "text-slate-300 hover:bg-white/[.05]"}`}>{icon}{label}</button>; }
 function Toggle({ label, value, active, onClick }: { label: string; value: string; active: boolean; onClick: () => void }) { return <button type="button" onClick={onClick} className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-white/[.05]"><span><span className="block text-xs text-slate-200">{label}</span><span className="block text-[10px] text-slate-500">{value}</span></span><span className={`h-4 w-7 rounded-full p-0.5 ${active ? "bg-cyan" : "bg-slate-700"}`}><span className={`block size-3 rounded-full bg-white transition ${active ? "translate-x-3" : ""}`} /></span></button>; }

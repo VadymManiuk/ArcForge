@@ -205,6 +205,7 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
         trades={snapshot.trades}
         tokenName={token.name}
         ticker={token.ticker}
+        tokenAddress={token.address}
         totalSupply={token.totalSupply}
       />
       {error && <div className="mt-3"><WarningBox>{error}</WarningBox></div>}

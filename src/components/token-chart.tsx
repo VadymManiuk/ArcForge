@@ -12,9 +12,12 @@ import {
   EyeOff,
   Focus,
   Minus,
+  MoveVertical,
   Redo2,
   RotateCcw,
+  Ruler,
   Settings2,
+  TrendingUp,
   Trash2,
   Undo2,
   ZoomIn,
@@ -36,6 +39,7 @@ const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
 type ChartTimeframe = (typeof timeframes)[number];
 type DisplayMode = "Price" | "MCap";
 type ScaleMode = "auto" | "log" | "%";
+type DrawingTool = "cursor" | "trend" | "horizontal" | "vertical" | "measure";
 
 const timeframeSeconds: Record<ChartTimeframe, number> = {
   "1s": 1,
@@ -64,6 +68,16 @@ type Candle = {
   close: number;
   volume: number;
 };
+
+type DrawingPoint = {
+  time: UTCTimestamp;
+  price: number;
+};
+
+type ChartDrawing =
+  | { kind: "horizontal"; price: number }
+  | { kind: "vertical"; time: UTCTimestamp }
+  | { kind: "trend" | "measure"; start: DrawingPoint; end: DrawingPoint };
 
 type TokenChartProps = {
   data: ChartPoint[];
@@ -141,9 +155,11 @@ export function TokenChart({
   const [showVolume, setShowVolume] = useState(true);
   const [showMarkers, setShowMarkers] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
-  const [drawingMode, setDrawingMode] = useState(false);
-  const [drawingLevels, setDrawingLevels] = useState<number[]>([]);
-  const [redoLevels, setRedoLevels] = useState<number[]>([]);
+  const [drawingTool, setDrawingTool] = useState<DrawingTool>("cursor");
+  const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
+  const [redoDrawings, setRedoDrawings] = useState<ChartDrawing[]>([]);
+  const [pendingDrawingPoint, setPendingDrawingPoint] = useState<DrawingPoint | null>(null);
+  const [overlayVersion, setOverlayVersion] = useState(0);
   const [indicatorMenuOpen, setIndicatorMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -160,7 +176,8 @@ export function TokenChart({
   const markerPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const candleMapRef = useRef(new Map<number, Candle>());
-  const drawingModeRef = useRef(drawingMode);
+  const drawingToolRef = useRef<DrawingTool>(drawingTool);
+  const pendingDrawingPointRef = useRef<DrawingPoint | null>(pendingDrawingPoint);
   const displayMultiplierRef = useRef(1);
 
   const baseCandles = useMemo(
@@ -189,8 +206,14 @@ export function TokenChart({
   );
 
   useEffect(() => {
-    drawingModeRef.current = drawingMode;
-  }, [drawingMode]);
+    drawingToolRef.current = drawingTool;
+    pendingDrawingPointRef.current = null;
+    setPendingDrawingPoint(null);
+  }, [drawingTool]);
+
+  useEffect(() => {
+    pendingDrawingPointRef.current = pendingDrawingPoint;
+  }, [pendingDrawingPoint]);
 
   useEffect(() => {
     displayMultiplierRef.current = displayMultiplier;
@@ -204,6 +227,8 @@ export function TokenChart({
 
   useEffect(() => {
     let disposed = false;
+    let resizeObserver: ResizeObserver | null = null;
+    let visibleRangeListener: (() => void) | null = null;
     async function createTradingChart() {
       const container = containerRef.current;
       if (!container) return;
@@ -301,19 +326,50 @@ export function TokenChart({
         setHoveredCandle(candleMapRef.current.get(parameter.time) ?? null);
       });
       chart.subscribeClick((parameter) => {
-        if (!drawingModeRef.current || !parameter.point) return;
+        const tool = drawingToolRef.current;
+        if (tool === "cursor" || !parameter.point || typeof parameter.time !== "number") return;
         const displayedPrice = candleSeries.coordinateToPrice(parameter.point.y);
         if (displayedPrice === null || !Number.isFinite(displayedPrice)) return;
-        const price = displayedPrice / displayMultiplierRef.current;
-        setDrawingLevels((current) => [...current, price]);
-        setRedoLevels([]);
+        const point = {
+          time: parameter.time as UTCTimestamp,
+          price: displayedPrice / displayMultiplierRef.current,
+        };
+
+        if (tool === "horizontal") {
+          setDrawings((current) => [...current, { kind: "horizontal", price: point.price }]);
+          setRedoDrawings([]);
+          return;
+        }
+        if (tool === "vertical") {
+          setDrawings((current) => [...current, { kind: "vertical", time: point.time }]);
+          setRedoDrawings([]);
+          return;
+        }
+
+        const start = pendingDrawingPointRef.current;
+        if (!start) {
+          pendingDrawingPointRef.current = point;
+          setPendingDrawingPoint(point);
+          return;
+        }
+        const drawing: ChartDrawing = { kind: tool, start, end: point };
+        setDrawings((current) => [...current, drawing]);
+        setRedoDrawings([]);
+        pendingDrawingPointRef.current = null;
+        setPendingDrawingPoint(null);
       });
+      visibleRangeListener = () => setOverlayVersion((version) => version + 1);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(visibleRangeListener);
+      resizeObserver = new ResizeObserver(() => setOverlayVersion((version) => version + 1));
+      resizeObserver.observe(container);
       setReady(true);
     }
     void createTradingChart();
     return () => {
       disposed = true;
       setReady(false);
+      if (visibleRangeListener) chartRef.current?.timeScale().unsubscribeVisibleLogicalRangeChange(visibleRangeListener);
+      resizeObserver?.disconnect();
       chartRef.current?.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -342,6 +398,13 @@ export function TokenChart({
       low: candle.low,
       close: candle.close,
     })));
+    candleSeries.applyOptions({
+      priceFormat: {
+        type: "custom",
+        formatter: valueFormatter,
+        minMove: displayMode === "MCap" ? 0.01 : 0.0000000001,
+      },
+    });
     volumeSeries.setData(showVolume ? candles.map((candle) => ({
       time: candle.time,
       value: candle.volume,
@@ -361,6 +424,7 @@ export function TokenChart({
       },
     });
     chart.timeScale().applyOptions({ secondsVisible: timeframe === "1s" || timeframe === "30s" });
+    chart.priceScale("right").applyOptions({ autoScale: true });
     if (compact) {
       chart.timeScale().fitContent();
     } else {
@@ -373,6 +437,7 @@ export function TokenChart({
   }, [
     candles,
     compact,
+    displayMode,
     ready,
     showEma,
     showGrid,
@@ -393,22 +458,27 @@ export function TokenChart({
           ? PriceScaleMode.Percentage
           : PriceScaleMode.Normal;
       chartRef.current?.priceScale("right").applyOptions({ mode, autoScale: true });
+      if (scaleMode === "auto") {
+        window.requestAnimationFrame(() => chartRef.current?.priceScale("right").applyOptions({ autoScale: true }));
+      }
     });
-  }, [ready, scaleMode]);
+  }, [displayMode, ready, scaleMode]);
 
   useEffect(() => {
     const series = candleSeriesRef.current;
     if (!ready || !series) return;
     for (const priceLine of priceLinesRef.current) series.removePriceLine(priceLine);
-    priceLinesRef.current = drawingLevels.map((price) => series.createPriceLine({
-      price: price * displayMultiplier,
+    priceLinesRef.current = drawings
+      .filter((drawing): drawing is Extract<ChartDrawing, { kind: "horizontal" }> => drawing.kind === "horizontal")
+      .map((drawing) => series.createPriceLine({
+      price: drawing.price * displayMultiplier,
       color: "#facc15",
       lineWidth: 1,
       lineStyle: 2,
       axisLabelVisible: true,
       title: "Level",
     }));
-  }, [displayMultiplier, drawingLevels, ready]);
+  }, [displayMultiplier, drawings, ready]);
 
   const fitContent = useCallback(() => {
     chartRef.current?.timeScale().fitContent();
@@ -438,26 +508,48 @@ export function TokenChart({
   }, [baseCandles, timeframe]);
 
   const undoDrawing = useCallback(() => {
-    setDrawingLevels((current) => {
+    setDrawings((current) => {
       const removed = current.at(-1);
       if (removed === undefined) return current;
-      setRedoLevels((redo) => [...redo, removed]);
+      setRedoDrawings((redo) => [...redo, removed]);
       return current.slice(0, -1);
     });
+    setPendingDrawingPoint(null);
   }, []);
 
   const redoDrawing = useCallback(() => {
-    setRedoLevels((current) => {
+    setRedoDrawings((current) => {
       const restored = current.at(-1);
       if (restored === undefined) return current;
-      setDrawingLevels((levels) => [...levels, restored]);
+      setDrawings((existing) => [...existing, restored]);
       return current.slice(0, -1);
     });
   }, []);
 
   const clearDrawings = useCallback(() => {
-    setDrawingLevels([]);
-    setRedoLevels([]);
+    setDrawings([]);
+    setRedoDrawings([]);
+    setPendingDrawingPoint(null);
+  }, []);
+
+  const selectDrawingTool = useCallback((tool: DrawingTool) => {
+    setDrawingTool(tool);
+  }, []);
+
+  const selectDisplayMode = useCallback((mode: DisplayMode) => {
+    setDisplayMode(mode);
+    setScaleMode("auto");
+    window.requestAnimationFrame(() => chartRef.current?.priceScale("right").applyOptions({ autoScale: true }));
+  }, []);
+
+  const selectScaleMode = useCallback((mode: ScaleMode) => {
+    setScaleMode(mode);
+    if (mode === "auto") {
+      window.requestAnimationFrame(() => {
+        chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
+        chartRef.current?.timeScale().fitContent();
+      });
+    }
   }, []);
 
   const toggleFullscreen = useCallback(async () => {
@@ -483,8 +575,8 @@ export function TokenChart({
     ref={shellRef}
     className={`relative overflow-hidden bg-[#111417] ${isFullscreen ? "h-screen w-screen p-3" : "rounded-xl border border-line"}`}
   >
-    <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-line bg-[#0e1114] px-2 py-1.5">
-      <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+    <div className="relative z-20 flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-line bg-[#0e1114] px-2 py-1.5">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 overflow-visible">
         {timeframes.map((item) => <ChartTextButton
           key={item}
           active={timeframe === item}
@@ -509,10 +601,10 @@ export function TokenChart({
         {(["Price", "MCap"] as const).map((mode) => <ChartTextButton
           key={mode}
           active={displayMode === mode}
-          onClick={() => setDisplayMode(mode)}
+          onClick={() => selectDisplayMode(mode)}
         >{mode}</ChartTextButton>)}
-        <ChartIconButton label="Undo drawing" disabled={drawingLevels.length === 0} onClick={undoDrawing}><Undo2 className="size-4"/></ChartIconButton>
-        <ChartIconButton label="Redo drawing" disabled={redoLevels.length === 0} onClick={redoDrawing}><Redo2 className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Undo drawing" disabled={drawings.length === 0} onClick={undoDrawing}><Undo2 className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Redo drawing" disabled={redoDrawings.length === 0} onClick={redoDrawing}><Redo2 className="size-4"/></ChartIconButton>
       </div>
       <div className="flex items-center gap-1">
         <ChartIconButton label="Fit chart" onClick={fitContent}><Focus className="size-4"/></ChartIconButton>
@@ -536,15 +628,22 @@ export function TokenChart({
 
     <div className="grid grid-cols-[42px_minmax(0,1fr)]">
       <div className="flex flex-col items-center gap-1 border-r border-line bg-[#0e1114] py-2">
-        <ChartIconButton label="Crosshair cursor" active={!drawingMode} onClick={() => setDrawingMode(false)}><Crosshair className="size-4"/></ChartIconButton>
-        <ChartIconButton label="Draw horizontal level" active={drawingMode} onClick={() => setDrawingMode((value) => !value)}><Minus className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Crosshair cursor" active={drawingTool === "cursor"} onClick={() => selectDrawingTool("cursor")}><Crosshair className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Draw trend line" active={drawingTool === "trend"} onClick={() => selectDrawingTool("trend")}><TrendingUp className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Draw horizontal level" active={drawingTool === "horizontal"} onClick={() => selectDrawingTool("horizontal")}><Minus className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Draw vertical line" active={drawingTool === "vertical"} onClick={() => selectDrawingTool("vertical")}><MoveVertical className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Measure price and time" active={drawingTool === "measure"} onClick={() => selectDrawingTool("measure")}><Ruler className="size-4"/></ChartIconButton>
         <span className="my-1 h-px w-6 bg-line"/>
         <ChartIconButton label="Show or hide trade markers" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}>{showMarkers ? <Eye className="size-4"/> : <EyeOff className="size-4"/>}</ChartIconButton>
-        <ChartIconButton label="Clear drawings" disabled={drawingLevels.length === 0} onClick={clearDrawings}><Trash2 className="size-4"/></ChartIconButton>
+        <ChartIconButton label="Clear drawings" disabled={drawings.length === 0 && !pendingDrawingPoint} onClick={clearDrawings}><Trash2 className="size-4"/></ChartIconButton>
       </div>
 
-      <div className="min-w-0">
-        <div className="pointer-events-none absolute left-[58px] top-[62px] z-10 max-w-[calc(100%-90px)]">
+      <div
+        className="relative min-w-0"
+        onWheel={() => window.requestAnimationFrame(() => setOverlayVersion((version) => version + 1))}
+        onPointerUp={() => window.requestAnimationFrame(() => setOverlayVersion((version) => version + 1))}
+      >
+        <div className="pointer-events-none absolute left-4 top-3 z-10 max-w-[calc(100%-32px)]">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
             <span className="font-semibold text-white">{tokenName} · {timeframe}</span>
             <span className="text-slate-500">· ArcOrigin curve</span>
@@ -560,7 +659,7 @@ export function TokenChart({
             {showVolume && <span className="text-slate-400">Volume <b className="font-normal text-cyan">{money(activeCandle?.volume ?? 0, true)}</b></span>}
             {showSma && <span className="text-amber-300">SMA 20</span>}
             {showEma && <span className="text-violet-300">EMA 20</span>}
-            {drawingMode && <span className="text-amber-200">Click chart to place level</span>}
+            {drawingTool !== "cursor" && <span className="text-amber-200">{drawingInstruction(drawingTool, Boolean(pendingDrawingPoint))}</span>}
           </div>
         </div>
         <div
@@ -568,13 +667,21 @@ export function TokenChart({
           className={isFullscreen ? "h-[calc(100vh-112px)] min-h-[480px] w-full" : "h-[480px] w-full"}
           aria-label="Interactive candlestick price chart"
         />
+        <DrawingOverlay
+          chart={chartRef.current}
+          series={candleSeriesRef.current}
+          drawings={drawings}
+          multiplier={displayMultiplier}
+          version={overlayVersion}
+          height={containerRef.current?.clientHeight ?? 480}
+        />
       </div>
     </div>
 
     <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-t border-line bg-[#0e1114] px-3 py-1">
       <div className="flex items-center gap-1">{lookbacks.map((item) => <ChartTextButton key={item.label} onClick={() => setLookback(item.seconds)}>{item.label}</ChartTextButton>)}</div>
       <div className="flex items-center gap-1">
-        {(["%", "log", "auto"] as const).map((mode) => <ChartTextButton key={mode} active={scaleMode === mode} onClick={() => setScaleMode(mode)}>{mode}</ChartTextButton>)}
+        {(["%", "log", "auto"] as const).map((mode) => <ChartTextButton key={mode} active={scaleMode === mode} onClick={() => selectScaleMode(mode)}>{mode}</ChartTextButton>)}
         <ChartIconButton label="Reset chart" onClick={fitContent}><RotateCcw className="size-3.5"/></ChartIconButton>
       </div>
     </div>
@@ -598,6 +705,109 @@ export function TokenChart({
       </div>
     </div>}
   </div>;
+}
+
+function DrawingOverlay({
+  chart,
+  series,
+  drawings,
+  multiplier,
+  version,
+  height,
+}: {
+  chart: IChartApi | null;
+  series: ISeriesApi<"Candlestick"> | null;
+  drawings: ChartDrawing[];
+  multiplier: number;
+  version: number;
+  height: number;
+}) {
+  void version;
+  if (!chart || !series) return null;
+
+  return <svg className="pointer-events-none absolute inset-0 z-[5] size-full overflow-visible" aria-hidden="true">
+    {drawings.map((drawing, index) => {
+      if (drawing.kind === "horizontal") return null;
+      if (drawing.kind === "vertical") {
+        const x = chart.timeScale().timeToCoordinate(drawing.time);
+        if (x === null) return null;
+        return <g key={`vertical-${index}`}>
+          <line x1={x} y1={0} x2={x} y2={height} stroke="#60a5fa" strokeWidth="1" strokeDasharray="5 5"/>
+          <rect x={Math.max(2, x - 38)} y={height - 25} width="76" height="18" rx="4" fill="#172554"/>
+          <text x={x} y={height - 16} textAnchor="middle" dominantBaseline="middle" fill="#bfdbfe" fontSize="9">{formatUtcTime(drawing.time)}</text>
+        </g>;
+      }
+
+      const x1 = chart.timeScale().timeToCoordinate(drawing.start.time);
+      const x2 = chart.timeScale().timeToCoordinate(drawing.end.time);
+      const y1 = series.priceToCoordinate(drawing.start.price * multiplier);
+      const y2 = series.priceToCoordinate(drawing.end.price * multiplier);
+      if (x1 === null || x2 === null || y1 === null || y2 === null) return null;
+
+      if (drawing.kind === "trend") {
+        return <g key={`trend-${index}`}>
+          <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#38bdf8" strokeWidth="2"/>
+          <circle cx={x1} cy={y1} r="3" fill="#111417" stroke="#38bdf8" strokeWidth="2"/>
+          <circle cx={x2} cy={y2} r="3" fill="#111417" stroke="#38bdf8" strokeWidth="2"/>
+        </g>;
+      }
+
+      const left = Math.min(x1, x2);
+      const top = Math.min(y1, y2);
+      const width = Math.max(1, Math.abs(x2 - x1));
+      const boxHeight = Math.max(1, Math.abs(y2 - y1));
+      const percent = drawing.start.price > 0
+        ? (drawing.end.price / drawing.start.price - 1) * 100
+        : 0;
+      const duration = Math.abs(Number(drawing.end.time) - Number(drawing.start.time));
+      const tone = percent >= 0 ? "#2dd4bf" : "#fb7185";
+      const labelX = Math.min(Math.max(left + width / 2, 68), Math.max(68, (containerWidth(chart) ?? 800) - 68));
+      const labelY = Math.max(16, top - 10);
+
+      return <g key={`measure-${index}`}>
+        <rect x={left} y={top} width={width} height={boxHeight} fill={percent >= 0 ? "rgba(45,212,191,.10)" : "rgba(251,113,133,.10)"} stroke={tone} strokeWidth="1" strokeDasharray="4 3"/>
+        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={tone} strokeWidth="1.5"/>
+        <rect x={labelX - 66} y={labelY - 10} width="132" height="20" rx="5" fill="#11161a" stroke={tone} strokeWidth="1"/>
+        <text x={labelX} y={labelY} textAnchor="middle" dominantBaseline="middle" fill={tone} fontSize="10" fontWeight="600">
+          {percent >= 0 ? "+" : ""}{percent.toFixed(2)}% · {formatDuration(duration)}
+        </text>
+      </g>;
+    })}
+  </svg>;
+}
+
+function containerWidth(chart: IChartApi) {
+  const range = chart.timeScale().getVisibleLogicalRange();
+  if (!range) return null;
+  const left = chart.timeScale().logicalToCoordinate(range.from);
+  const right = chart.timeScale().logicalToCoordinate(range.to);
+  if (left === null || right === null) return null;
+  return Math.abs(right - left);
+}
+
+function drawingInstruction(tool: DrawingTool, hasStart: boolean) {
+  if (tool === "horizontal") return "Click chart to place horizontal level";
+  if (tool === "vertical") return "Click chart to place vertical line";
+  if (tool === "trend") return hasStart ? "Click the trend line end point" : "Click the trend line start point";
+  if (tool === "measure") return hasStart ? "Click the measurement end point" : "Click the measurement start point";
+  return "";
+}
+
+function formatDuration(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3_600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86_400) return `${(seconds / 3_600).toFixed(seconds < 10_800 ? 1 : 0)}h`;
+  return `${(seconds / 86_400).toFixed(seconds < 259_200 ? 1 : 0)}d`;
+}
+
+function formatUtcTime(timestamp: UTCTimestamp) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(Number(timestamp) * 1_000));
 }
 
 function buildTradeMarkers(

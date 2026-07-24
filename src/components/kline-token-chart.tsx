@@ -27,7 +27,7 @@ import { buildCandles, type ChartTimeframe } from "@/components/token-chart";
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
 type DisplayMode = "Price" | "MCap";
 type IndicatorName = "MA" | "EMA" | "VOL";
-type Tool = "cursor" | "straightLine" | "horizontalStraightLine" | "verticalStraightLine" | "priceLine";
+type Tool = "cursor" | "straightLine" | "horizontalStraightLine" | "verticalStraightLine" | "arcMeasure";
 
 type TokenChartProps = {
   data: ChartPoint[];
@@ -64,7 +64,7 @@ function toolLabel(tool: Tool) {
     case "straightLine": return "Trend line";
     case "horizontalStraightLine": return "Horizontal line";
     case "verticalStraightLine": return "Vertical line";
-    case "priceLine": return "Price measurement";
+    case "arcMeasure": return "Price and time measurement";
     default: return "Cursor";
   }
 }
@@ -127,9 +127,39 @@ export function KLineTokenChart({
     let disposeChart: ((target: HTMLElement | KLineChart | string) => void) | null = null;
 
     async function mount() {
-      const { dispose, init } = await import("klinecharts");
+      const { dispose, init, registerOverlay } = await import("klinecharts");
       if (disposed || !containerRef.current) return;
       disposeChart = dispose;
+      registerOverlay({
+        name: "arcMeasure",
+        totalStep: 3,
+        needDefaultPointFigure: true,
+        needDefaultXAxisFigure: true,
+        needDefaultYAxisFigure: true,
+        createPointFigures: ({ coordinates, overlay }) => {
+          if (coordinates.length < 2) return [];
+          const [start, end] = coordinates;
+          const startValue = Number(overlay.points[0]?.value ?? 0);
+          const endValue = Number(overlay.points[1]?.value ?? 0);
+          const startTime = Number(overlay.points[0]?.timestamp ?? 0);
+          const endTime = Number(overlay.points[1]?.timestamp ?? 0);
+          const percent = startValue > 0 ? ((endValue / startValue) - 1) * 100 : 0;
+          const durationSeconds = Math.abs(endTime - startTime) / 1000;
+          const duration = durationSeconds >= 3600
+            ? `${Math.floor(durationSeconds / 3600)}h ${Math.floor((durationSeconds % 3600) / 60)}m`
+            : durationSeconds >= 60 ? `${Math.floor(durationSeconds / 60)}m ${Math.floor(durationSeconds % 60)}s` : `${durationSeconds.toFixed(0)}s`;
+          const left = Math.min(start.x, end.x);
+          const top = Math.min(start.y, end.y);
+          const width = Math.max(1, Math.abs(end.x - start.x));
+          const height = Math.max(1, Math.abs(end.y - start.y));
+          const label = `${percent >= 0 ? "+" : ""}${percent.toFixed(2)}% · ${duration}`;
+          return [
+            { type: "rect", attrs: { x: left, y: top, width, height }, styles: { style: "fill", color: percent >= 0 ? "rgba(40,198,184,.12)" : "rgba(250,99,116,.12)", borderColor: percent >= 0 ? "#28c6b8" : "#fa6374", borderSize: 1 } },
+            { type: "line", attrs: { coordinates: [start, end] }, styles: { color: percent >= 0 ? "#28c6b8" : "#fa6374", size: 1, style: "dashed" } },
+            { type: "text", attrs: { x: left + width / 2, y: top + height / 2, text: label, align: "center", baseline: "middle" }, styles: { style: "fill", color: "#e6fffa", size: 10, family: "ui-monospace, monospace", weight: "600", backgroundColor: "#17202a", borderColor: "#39515b", borderSize: 1, borderRadius: 3, paddingLeft: 5, paddingRight: 5, paddingTop: 3, paddingBottom: 3 } },
+          ];
+        },
+      });
       const chart = init(containerRef.current, {
         timezone: "Etc/UTC",
         styles: {
@@ -289,7 +319,7 @@ export function KLineTokenChart({
         <IconButton label="Draw trend line" active={tool === "straightLine"} onClick={() => chooseTool("straightLine")}><TrendingUp className="size-4" /></IconButton>
         <IconButton label="Draw horizontal line" active={tool === "horizontalStraightLine"} onClick={() => chooseTool("horizontalStraightLine")}><Minus className="size-4" /></IconButton>
         <IconButton label="Draw vertical line" active={tool === "verticalStraightLine"} onClick={() => chooseTool("verticalStraightLine")}><MoveVertical className="size-4" /></IconButton>
-        <IconButton label="Measure price" active={tool === "priceLine"} onClick={() => chooseTool("priceLine")}><Ruler className="size-4" /></IconButton>
+        <IconButton label="Measure price and time" active={tool === "arcMeasure"} onClick={() => chooseTool("arcMeasure")}><Ruler className="size-4" /></IconButton>
         <span className="my-1 h-px w-6 bg-line" />
         <IconButton label="Show trade markers" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}>{showMarkers ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</IconButton>
         <IconButton label="Clear drawings" onClick={clearDrawings}><Trash2 className="size-4" /></IconButton>

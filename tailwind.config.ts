@@ -5,18 +5,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#080a0b",
-        panel: "#111516",
-        line: "#252b2d",
-        cyan: "#79e7c5",
-        violet: "#91a4ff",
+        ink: "#070a11",
+        panel: "#0e1520",
+        line: "#243044",
+        cyan: "#73d9ff",
+        violet: "#8299ff",
       },
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["SFMono-Regular", "ui-monospace", "monospace"],
+        sans: ["Manrope Variable", "Manrope", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono Variable", "JetBrains Mono", "ui-monospace", "monospace"],
       },
       boxShadow: {
-        glow: "0 18px 60px rgba(0,0,0,.28)",
+        glow: "0 24px 70px rgba(0,0,0,.32)",
       },
     },
   },

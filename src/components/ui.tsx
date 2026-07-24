@@ -4,16 +4,12 @@ import { ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
 import { EXPLORER_URL } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 
-export function NetworkBanner() {
-  return <div className="border-b border-line bg-[#0b0e0f] px-3 py-1.5 text-center text-[10px] font-medium tracking-wide text-slate-400 sm:text-[11px]"><span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-400 align-middle"/>Arc Testnet · verified Factory launches and trades only</div>;
-}
-
 export function Button({ className, variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
-  return <button className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40", variant === "primary" && "bg-cyan text-[#07110e] hover:bg-[#98efd5]", variant === "secondary" && "border border-line bg-white/[.035] text-white hover:border-slate-500 hover:bg-white/[.06]", variant === "ghost" && "text-slate-400 hover:bg-white/[.045] hover:text-white", variant === "danger" && "bg-rose-400/15 text-rose-300", className)} {...props} />;
+  return <button className={cn("inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40", variant === "primary" && "bg-gradient-to-r from-cyan to-[#9aa9ff] text-[#061019] shadow-[0_10px_30px_rgba(70,167,255,.14)] hover:brightness-110", variant === "secondary" && "border border-line bg-white/[.035] text-white hover:border-cyan/30 hover:bg-white/[.065]", variant === "ghost" && "text-slate-400 hover:bg-white/[.045] hover:text-white", variant === "danger" && "bg-rose-400/15 text-rose-300", className)} {...props} />;
 }
 
 export function LinkButton({ href, children, variant = "primary", className }: { href: string; children: ReactNode; variant?: "primary" | "secondary"; className?: string }) {
-  return <Link href={href} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition", variant === "primary" ? "bg-cyan text-[#07110e] hover:bg-[#98efd5]" : "border border-line bg-white/[.025] text-white hover:border-slate-500 hover:bg-white/[.05]", className)}>{children}</Link>;
+  return <Link href={href} className={cn("inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold transition duration-200", variant === "primary" ? "bg-gradient-to-r from-cyan to-[#9aa9ff] text-[#061019] shadow-[0_10px_30px_rgba(70,167,255,.14)] hover:brightness-110" : "border border-line bg-white/[.025] text-white hover:border-cyan/30 hover:bg-white/[.06]", className)}>{children}</Link>;
 }
 
 export function Badge({ children, tone = "neutral", className }: { children: ReactNode; tone?: "neutral" | "good" | "warn" | "bad" | "cyan"; className?: string }) {
@@ -25,7 +21,7 @@ export function StatCard({ label, value, detail, className }: { label: string; v
 }
 
 export function SectionHeading({ eyebrow, title, body, action }: { eyebrow?: string; title: string; body?: string; action?: ReactNode }) {
-  return <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div>{eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}<h2 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">{title}</h2>{body && <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">{body}</p>}</div>{action}</div>;
+  return <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div className="min-w-0">{eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}<h2 className="text-2xl font-bold tracking-[-.035em] text-white md:text-3xl">{title}</h2>{body && <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">{body}</p>}</div>{action}</div>;
 }
 
 export function AddressPill({ address }: { address: string }) { return <code className="min-w-0 truncate rounded-lg border border-line bg-black/20 px-2 py-1 text-[11px] text-slate-400" title={address}>{shortAddress(address)}</code>; }
@@ -47,7 +43,7 @@ export function TokenIcon({ label, image, className }: { label: string; image?: 
 export function Progress({ value }: { value: number }) { return <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))}%` }} /></div>; }
 
 export function PageIntro({ eyebrow, title, body, children }: { eyebrow: string; title: string; body: string; children?: ReactNode }) {
-  return <div className="container-shell pb-8 pt-10 md:pb-10 md:pt-14"><div className="max-w-2xl"><p className="eyebrow mb-3">{eyebrow}</p><h1 className="text-3xl font-semibold tracking-[-.04em] text-white sm:text-4xl md:text-5xl">{title}</h1><p className="mt-4 text-sm leading-6 text-slate-400 md:text-base md:leading-7">{body}</p>{children}</div></div>;
+  return <div className="container-shell pb-7 pt-9 md:pb-9 md:pt-12"><div className="max-w-2xl"><p className="eyebrow mb-3">{eyebrow}</p><h1 className="text-3xl font-bold tracking-[-.055em] text-white sm:text-4xl md:text-[46px] md:leading-[1.05]">{title}</h1><p className="mt-4 max-w-xl text-sm leading-6 text-slate-400 md:text-[15px]">{body}</p>{children}</div></div>;
 }
 
 export function EmptyState({ title, body }: { title: string; body: string }) { return <div className="panel p-10 text-center"><p className="font-medium text-white">{title}</p><p className="mt-2 text-sm text-slate-500">{body}</p></div>; }

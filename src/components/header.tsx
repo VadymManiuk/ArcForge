@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Wallet, X } from "lucide-react";
+import { Menu, Radio, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { arcTestnet } from "@/lib/chains";
@@ -12,7 +12,6 @@ import { Badge, Button } from "./ui";
 const nav = [
   ["Markets", "/tokens"],
   ["Launch", "/launch"],
-  ["Fees", "/fees"],
   ["Docs", "/docs"],
 ] as const;
 
@@ -45,8 +44,8 @@ function NavLink({ href, label, path, onClick }: { href: string; label: string; 
     onClick={onClick}
     aria-current={active ? "page" : undefined}
     className={cn(
-      "rounded-xl px-3.5 py-2 text-sm transition",
-      active ? "bg-white/[.065] text-white" : "text-slate-400 hover:text-white",
+      "rounded-xl px-4 py-2 text-sm font-semibold transition",
+      active ? "bg-white/[.085] text-white shadow-sm" : "text-slate-400 hover:bg-white/[.035] hover:text-white",
     )}
   >{label}</Link>;
 }
@@ -56,17 +55,19 @@ export function Header() {
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
 
-  return <header className="sticky top-0 z-50 border-b border-line bg-ink/90 backdrop-blur-xl">
-    <div className="container-shell flex h-16 items-center justify-between">
+  return <header className="sticky top-0 z-50 border-b border-line/80 bg-ink/85 backdrop-blur-2xl">
+    <div className="container-shell flex h-[68px] items-center justify-between gap-4">
       <Link href="/" className="flex items-center gap-2.5">
-        <span className="grid size-8 place-items-center rounded-xl border border-cyan/25 bg-gradient-to-br from-cyan to-[#9aa7ff] text-sm font-extrabold text-[#07110e] shadow-[0_0_24px_rgba(121,231,197,.12)]">A</span>
-        <span className="text-sm font-semibold tracking-[.14em] text-white">ARCORIGIN</span>
-        <Badge tone="neutral" className="hidden sm:inline-flex">Testnet</Badge>
+        <span className="grid size-9 place-items-center rounded-xl border border-cyan/25 bg-[#0a111d] text-sm font-extrabold text-cyan shadow-[0_0_28px_rgba(71,173,255,.16)]">AO</span>
+        <span className="text-[15px] font-extrabold tracking-[-.025em] text-white">ArcOrigin</span>
       </Link>
-      <nav className="hidden items-center gap-1 lg:flex">
+      <nav className="hidden items-center gap-1 rounded-2xl border border-line bg-white/[.025] p-1 lg:flex">
         {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} />)}
       </nav>
-      <div className="hidden md:block"><WalletButton /></div>
+      <div className="hidden items-center gap-2 md:flex">
+        <Badge tone="good" className="hidden gap-1.5 xl:inline-flex"><Radio className="size-3" />Arc Testnet ready</Badge>
+        <WalletButton />
+      </div>
       <button
         className="grid size-10 place-items-center rounded-xl border border-line text-slate-300 lg:hidden"
         onClick={() => setOpen(!open)}
@@ -77,6 +78,7 @@ export function Header() {
     </div>
     {open && <div id="mobile-navigation" className="container-shell grid gap-1 border-t border-line py-3 lg:hidden">
       {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} onClick={() => setOpen(false)} />)}
+      <div className="my-2 h-px bg-line md:hidden" />
       <div className="mt-2 md:hidden"><WalletButton /></div>
     </div>}
   </header>;

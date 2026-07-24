@@ -547,13 +547,10 @@ export function LaunchForm() {
         <Row label="Supply" value="1,000,000,000" />
         <Row label="Creator allocation" value={`${form.allocation || 0}%`} />
         <Row label="Curve target" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
-        <Row label="Developer buy · separate payment" value={`${developerBuyAmount.toLocaleString()} USDC`} />
-        <Row label="Curve inventory sold" value="80%" />
-        <Row label="Permanent LP TVL" value={`≈ ${curveEconomics.permanentLiquidityTvl.toLocaleString()} USDC`} />
+        <Row label="Developer buy" value={`${developerBuyAmount.toLocaleString()} USDC`} />
         <Row label="Launch fee" value="25 USDC" />
         <Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} />
-        <Row label="Buy / sell fee" value="1% / 1%" />
-        <Row label="Trading fee split" value="70% creator / 30% protocol" />
+        <Row label="Trading fee" value="1% · 70/30 split" />
         <Row label="Network" value="Arc Testnet" />
         <Row label="Factory" value={shortAddress(ARC_TESTNET_CONTRACTS.factory)} />
       </dl>

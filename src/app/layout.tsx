@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/manrope";
+import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Header } from "@/components/header";
-import { NetworkBanner } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: { default: "ArcOrigin — Launch and discover tokens on Arc", template: "%s · ArcOrigin" },
@@ -13,7 +14,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en"><body className="antialiased">
       <a href="#main-content" className="skip-link">Skip to content</a>
-      <Providers><NetworkBanner /><Header /><main id="main-content">{children}</main></Providers>
+      <Providers><Header /><main id="main-content">{children}</main></Providers>
     </body></html>
   );
 }

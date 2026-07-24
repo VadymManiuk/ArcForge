@@ -4,16 +4,17 @@
 
 :root { color-scheme: dark; }
 * { border-color: theme(colors.line); }
-html { background: #080a0b; scroll-behavior: smooth; }
+html { background: #070a11; scroll-behavior: smooth; }
 body {
   min-height: 100vh;
   overflow-x: hidden;
   color: #f1f4f3;
   background:
-    radial-gradient(800px 420px at 50% -120px, rgba(121, 231, 197, .08), transparent 68%),
-    #080a0b;
+    radial-gradient(900px 520px at 12% 0%, rgba(39, 98, 198, .18), transparent 68%),
+    radial-gradient(760px 520px at 92% 12%, rgba(39, 174, 198, .09), transparent 68%),
+    #070a11;
   font-feature-settings: "ss01", "cv02", "cv03";
-  font-family: "Inter Variable", Inter, "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Manrope Variable", Manrope, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   letter-spacing: -.01em;
   text-rendering: optimizeLegibility;
@@ -21,23 +22,24 @@ body {
 button, input, textarea, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
-  outline: 2px solid rgba(121, 231, 197, .75);
+  outline: 2px solid rgba(115, 217, 255, .75);
   outline-offset: 2px;
 }
 h1, h2, h3 { text-wrap: balance; }
 p { text-wrap: pretty; }
-::selection { color: #07100d; background: rgba(121,231,197,.8); }
-.skip-link { position: fixed; left: 1rem; top: -4rem; z-index: 100; border-radius: .75rem; background: #79e7c5; padding: .65rem 1rem; color: #07110e; font-size: .875rem; font-weight: 700; transition: top .15s ease; }
+::selection { color: #061019; background: rgba(115,217,255,.82); }
+.skip-link { position: fixed; left: 1rem; top: -4rem; z-index: 100; border-radius: .75rem; background: #73d9ff; padding: .65rem 1rem; color: #061019; font-size: .875rem; font-weight: 700; transition: top .15s ease; }
 .skip-link:focus { top: 1rem; }
 
 @layer components {
-  .container-shell { @apply mx-auto w-full max-w-[1400px] px-4 md:px-6 lg:px-8; }
-  .panel { @apply rounded-2xl border border-line bg-panel shadow-glow; background-image: linear-gradient(145deg, rgba(255,255,255,.014), transparent 38%); }
-  .eyebrow { @apply font-mono text-[10px] font-medium uppercase tracking-[.18em] text-cyan; }
+  .container-shell { @apply mx-auto w-full max-w-[1440px] px-4 md:px-7 lg:px-10; }
+  .panel { @apply rounded-[20px] border border-line bg-panel shadow-glow; background-image: linear-gradient(145deg, rgba(255,255,255,.022), transparent 42%); }
+  .eyebrow { @apply font-mono text-[10px] font-semibold uppercase tracking-[.16em] text-cyan; }
   .muted { @apply text-sm text-slate-400; }
-  .input { @apply h-11 w-full rounded-xl border border-line bg-[#0b0e0f] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10; box-shadow: inset 0 1px rgba(255,255,255,.015); }
+  .input { @apply h-11 w-full rounded-xl border border-line bg-[#090e17] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10; box-shadow: inset 0 1px rgba(255,255,255,.018); }
   .label { @apply mb-2 block text-xs font-medium text-slate-300; }
-  .grid-line { background-image: linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px); background-size: 64px 64px; }
+  .grid-line { background-image: linear-gradient(rgba(115,217,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(115,217,255,.035) 1px, transparent 1px); background-size: 52px 52px; }
+  .break-safe { overflow-wrap: anywhere; word-break: break-word; }
 }
 
 .recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #242a2c; }

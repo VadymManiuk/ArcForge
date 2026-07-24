@@ -29,7 +29,7 @@ export default function RiskPage() {
       <PageIntro
         eyebrow="Risk methodology"
         title="Signals, not guarantees"
-        body="A consistent 0–100 score built from inspectable contract, allocation, holder, and creator signals. Missing information never receives the benefit of the doubt."
+        body="A 0–100 score built from visible contract, allocation, holder, and creator signals."
       />
       <div className="container-shell grid gap-5 pb-20 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Panel className="overflow-hidden">

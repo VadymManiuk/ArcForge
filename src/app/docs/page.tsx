@@ -45,7 +45,7 @@ export default function DocsPage() {
       <PageIntro
         eyebrow="Product guide"
         title="How ArcOrigin works"
-        body="The essentials of launching, trading, and verifying a token—without hiding protocol behavior behind marketing language."
+        body="Launch, trade, graduation, and verification in one place."
       />
       <div className="container-shell grid gap-4 pb-20 lg:grid-cols-2">
         {sections.map((section, sectionIndex) => (

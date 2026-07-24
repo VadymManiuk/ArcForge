@@ -149,16 +149,16 @@ export function TokenTable({
     </div>
 
     <div className="hidden overflow-x-auto md:block">
-      <table className="w-full min-w-[1280px] text-left text-xs [&_td]:px-3 [&_th]:px-3">
+      <table className={`w-full text-left text-xs [&_td]:px-3 [&_th]:px-3 ${compact ? "min-w-[940px]" : "min-w-[1280px]"}`}>
         <thead><tr className="border-b border-line bg-white/[.012] text-[10px] text-slate-500">
           <th className="px-4 py-3 font-medium">Token</th>
-          <SortableHeader label="Created" sortKey="created" activeSort={sort} direction={direction} onSort={changeSort}/>
+          {!compact && <SortableHeader label="Created" sortKey="created" activeSort={sort} direction={direction} onSort={changeSort}/>}
           <SortableHeader label="Price / 24h" sortKey="price" secondarySortKey="priceChange24h" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Market cap" sortKey="marketCap" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Liquidity" sortKey="raisedUSDC" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Volume" sortKey="volume24h" activeSort={sort} direction={direction} onSort={changeSort}/>
-          <SortableHeader label="Trades" sortKey="trades" activeSort={sort} direction={direction} onSort={changeSort}/>
-          <SortableHeader label="Holders" sortKey="holders" activeSort={sort} direction={direction} onSort={changeSort}/>
+          {!compact && <SortableHeader label="Trades" sortKey="trades" activeSort={sort} direction={direction} onSort={changeSort}/>}
+          {!compact && <SortableHeader label="Holders" sortKey="holders" activeSort={sort} direction={direction} onSort={changeSort}/>}
           <SortableHeader label="Curve" sortKey="curveProgress" activeSort={sort} direction={direction} onSort={changeSort} className="w-36"/>
           <SortableHeader label="Risk" sortKey="riskScore" activeSort={sort} direction={direction} onSort={changeSort}/>
           <th></th>
@@ -168,13 +168,13 @@ export function TokenTable({
           const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
           return <tr key={token.address} className="border-b border-line/60 transition last:border-0 hover:bg-white/[.025]">
             <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><div className="flex items-center gap-2"><p className="font-semibold text-white">{token.name}</p><SourceBadge onchainState={onchainState}/></div><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><span className="text-[10px] text-slate-600">{token.status}</span></div></div></Link></td>
-            <td className="whitespace-nowrap text-slate-400">{createdLabel(token)}</td>
+            {!compact && <td className="whitespace-nowrap text-slate-400">{createdLabel(token)}</td>}
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><p className="text-slate-200">{money(token.price)}</p><button type="button" onClick={() => changeSort("priceChange24h")} className={token.priceChange24h >= 0 ? "mt-1 text-emerald-400" : "mt-1 text-rose-400"}>Since launch {token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</button></>}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.marketCap, true)}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.raisedUSDC, true)}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.volume24h, true)}</td>
-            <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>
-            <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>
+            {!compact && <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>}
+            {!compact && <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>}
             <td className="pr-5"><div className="mb-1.5 flex justify-between text-[10px] text-slate-500"><span>{awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></td>
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <RiskBadge score={token.riskScore}/>}</td>
             <td className="pr-4"><Link href={`/tokens/${token.address}`} className="font-semibold text-cyan">Trade →</Link></td>

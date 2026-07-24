@@ -101,7 +101,7 @@ export function BuySellPanel({ token }: { token: TokenData }) {
   if (token.curveAddress) {
     return <LiveBuySellPanel token={token} curveAddress={token.curveAddress as Address} />;
   }
-  return <div className="panel p-5"><Badge tone="warn">Onchain data unavailable</Badge><p className="mt-4 text-sm leading-6 text-slate-400">The indexed Factory event did not include a usable bonding-curve address. Trading is disabled.</p></div>;
+  return <div id="trade-panel" className="panel scroll-mt-28 p-5"><Badge tone="warn">Onchain data unavailable</Badge><p className="mt-4 text-sm leading-6 text-slate-400">The indexed Factory event did not include a usable bonding-curve address. Trading is disabled.</p></div>;
 }
 
 function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddress: Address }) {
@@ -348,7 +348,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           ? balanceError ? "Balance unavailable · Retry" : "Balance unavailable"
           : `Balance ${displayUnits(activeBalance, inputDecimals)} ${inputSymbol}`;
 
-  return <div className="panel rounded-xl p-4 shadow-none">
+  return <div id="trade-panel" className="panel scroll-mt-28 rounded-xl p-4 shadow-none">
     <div className="-mx-4 -mt-4 mb-4 flex items-center justify-between border-b border-line bg-black/10 px-4 py-3">
       <div><p className="text-sm font-semibold text-white">Trade {token.ticker}</p><p className="mt-0.5 font-mono text-[9px] text-slate-600">Bonding curve execution</p></div>
       <div className="text-right"><Badge tone="good">Live onchain</Badge><p className="mt-1 font-mono text-[8px] text-slate-600">Arc Testnet</p></div>

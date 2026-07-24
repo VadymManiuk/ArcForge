@@ -24,6 +24,12 @@ function isSnapshot(value: unknown): value is HolderSnapshot {
   if (!value || typeof value !== "object") return false;
   const snapshot = value as Partial<HolderSnapshot>;
   return Number.isFinite(snapshot.holders)
+    && Array.isArray(snapshot.topHolders)
+    && snapshot.topHolders.every((holder) => holder
+      && typeof holder.address === "string"
+      && typeof holder.balance === "string"
+      && Number.isFinite(holder.percent)
+      && (holder.role === "Creator" || holder.role === "Curve" || holder.role === "Holder"))
     && Number.isFinite(snapshot.creatorPercent)
     && Number.isFinite(snapshot.curvePercent)
     && Number.isFinite(snapshot.permanentLiquidityLockPercent)

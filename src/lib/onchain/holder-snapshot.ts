@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createPublicClient, decodeEventLog, http, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
+import { createPublicClient, decodeEventLog, formatUnits, http, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
 import { ARC_TESTNET_FACTORY_INDEXES, arcTestnet } from "@/lib/chains";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 
@@ -29,12 +29,20 @@ export type FactoryLaunch = {
 
 export type HolderSnapshot = {
   holders: number;
+  topHolders: HolderEntry[];
   creatorPercent: number;
   curvePercent: number;
   permanentLiquidityLockPercent: number;
   topTenExcludingCurvePercent: number;
   indexedBlock: string;
   generatedAt: string;
+};
+
+export type HolderEntry = {
+  address: Address;
+  balance: string;
+  percent: number;
+  role: "Creator" | "Curve" | "Holder";
 };
 
 export type HolderLaunchHint = {
@@ -348,9 +356,24 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
     .sort((left, right) => left === right ? 0 : left > right ? -1 : 1)
     .slice(0, 10)
     .reduce((sum, balance) => sum + balance, 0n);
+  const topHolders: HolderEntry[] = visibleHolders
+    .slice()
+    .sort((left, right) => left[1] === right[1] ? 0 : left[1] > right[1] ? -1 : 1)
+    .slice(0, 100)
+    .map(([address, balance]) => ({
+      address: address as Address,
+      balance: formatUnits(balance, 18),
+      percent: percentOf(balance, totalSupply),
+      role: address === curveAddress
+        ? "Curve"
+        : address === launch.creator.toLowerCase()
+          ? "Creator"
+          : "Holder",
+    }));
 
   return {
     holders: visibleHolders.length,
+    topHolders,
     creatorPercent: percentOf(creatorBalance, totalSupply),
     curvePercent: percentOf(curveBalance, totalSupply),
     permanentLiquidityLockPercent: percentOf(permanentLiquidityLockBalance, totalSupply),
